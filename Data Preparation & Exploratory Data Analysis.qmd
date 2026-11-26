@@ -1,6 +1,7 @@
 ---
-title: "Data Preparation and EDA"
-author: "IDS 702 Team 5"
+title: "Browsing to Buying - Analyzing shoppers' online purchase conversions"
+subtitle: "Haoye Xu, Tien Le, Yiran Chen"
+author: "IDS 702 | Team 5"
 format:
   pdf:
     number-sections: false
@@ -11,6 +12,10 @@ execute:
   warning: false
   message: false
 ---
+
+Does spending more time browsing products have a different association with purchase likelihood for new versus returning online shoppers, after accounting for other browsing behaviors and session characteristics?
+
+# A. Data Preparation and Exploratory Data Analysis
 
 ## 1 Data Import
 
@@ -1183,3 +1188,163 @@ Holst, C. (2025, February 2). *Reasons for cart abandonment – Why 70% of users
 Sakar, C. O., & Kastro, Y. (2018). *Online shoppers purchasing intention dataset* \[Data set\]. UCI Machine Learning Repository. <https://doi.org/10.24432/C5F88Q>
 
 Sakar, C. O., Polat, S. O., Katircioglu, M., & Kastro, Y. (2019). Real-time prediction of online shoppers’ purchasing intention using multilayer perceptron and LSTM recurrent neural networks. *Neural Computing and Applications, 31*, 6893–6908. <https://doi.org/10.1007/s00521-018-3523-0>
+
+# B. Statistical Modeling & Inference
+
+## 1. Model Formulation
+
+Multiple logistic regression was selected because the outcome of interest is binary: a shopper either makes a purchase or does not. This model allows us to examine the association between product browsing duration and purchase likelihood while controlling for other browsing behaviors and session characteristics.
+
+We will fit two models: a main effects model and an interaction model. The interaction model allows us to assess whether the association between product browsing duration and purchase likelihood differs between new and returning visitors.
+
+### Model 1: Main Effects Model
+
+$$Y_i \sim \text{Bernoulli}(p_i)$$
+
+$$\log\left(\frac{p_i}{1-p_i}\right)
+= \beta_0 + \beta_1D_i + \beta_2V_i
++ \beta_3P_i + \beta_4W_i$$
+
+### Model 2: Interaction Model
+
+$$\log\left(\frac{p_i}{1-p_i}\right)
+= \beta_0 + \beta_1D_i + \beta_2V_i
++ \beta_3P_i + \beta_4W_i
++ \beta_5(D_i \times V_i)$$
+
+Where:
+
+| Symbol | Description |
+|-----------------------|------------------------------------------------|
+| $Y_i$ | Purchase outcome (1 = purchase, 0 = no purchase) |
+| $p_i$ | Probability of purchase for session $i$ |
+| $D_i$ | Product browsing duration (minutes) |
+| $V_i$ | Visitor type (0 = new, 1 = returning) |
+| $P_i$ | Number of product-related pages visited |
+| $W_i$ | Weekend status (0 = weekday, 1 = weekend) |
+| $D_i \times V_i$ | Interaction between browsing duration and visitor type |
+| $\beta_0$ | Intercept |
+| $\beta_1, \ldots, \beta_5$ | Regression coefficients |
+
+## 2. Covariate Selection
+
+Covariates were selected based on the research question, subject-matter relevance, and exploratory data analysis.
+
+Product browsing duration and visitor type (new or returning) were selected as the primary independent variables. An interaction term between these variables will be included to assess whether the association between browsing duration and purchase likelihood differs by visitor type.
+
+The following variables were selected as initial controls:
+
+- **Number of product-related pages visited:** Accounts for the volume of product browsing, allowing us to examine the association between browsing duration and purchase likelihood while holding page count constant.
+
+- **Weekend status:** Accounts for potential differences in shopping behavior between weekdays and weekends.
+
+Exploratory data analysis revealed a strong correlation between product page count and browsing duration ($r = 0.861$). Both variables will initially be retained because of their relevance to the research question. Potential multicollinearity will be further assessed using variance inflation factors (VIF).
+
+Additional browsing behaviors and session characteristics will be considered as potential covariates during model assessment. Page value will be excluded due to its potential to incorporate information related to the purchase outcome.
+
+## 3. Multiple Logistic Regression
+
+We first fit a multiple logistic regression model without an interaction term to establish a baseline for comparison. This model estimates the association between product browsing duration and purchase likelihood while accounting for visitor type, product page count, and weekend status.
+
+```{r}
+# Fit main effects logistic regression model
+model1 <- glm(
+  Revenue ~ Duration_Minutes + VisitorType + ProductRelated + Weekend,
+  data = df_clean,
+  family = binomial(link = "logit")
+)
+
+# Display model summary
+summary(model1)
+```
+
+### 3.1. Coefficient Estimates
+
+All four predictors were statistically significant at the
+0.05 significance level. Since logistic regression coefficients
+are estimated on the log-odds scale, we exponentiate the
+coefficients to obtain odds ratios for more intuitive
+interpretation.
+
+$$
+OR_j = e^{\hat{\beta}_j}
+$$
+
+```{r}
+library(broom)
+
+# Calculate odds ratios and 95% confidence intervals
+model1_results <- tidy(
+  model1,
+  conf.int = TRUE,
+  conf.level = 0.95,
+  exponentiate = TRUE
+)
+
+model1_results
+```
+
+### 3.2. Interpretation of Results
+
+Holding all other predictors constant:
+
+- **Product browsing duration:** Each additional minute
+  spent browsing product-related pages is associated with
+  a 0.55% increase in the odds of purchasing
+  ($OR = 1.0055$, $p < 0.001$).
+
+- **Visitor type:** Returning visitors have approximately
+  59.4% lower odds of purchasing compared to new visitors
+  ($OR = 0.4059$, $p < 0.001$).
+
+- **Product page count:** Each additional product-related
+  page visited is associated with a 0.53% increase in
+  the odds of purchasing
+  ($OR = 1.0053$, $p < 0.001$).
+
+- **Weekend status:** Visitors browsing on weekends have
+  approximately 15.9% higher odds of purchasing compared
+  to visitors browsing on weekdays
+  ($OR = 1.1594$, $p = 0.0116$).
+
+These results suggest that both the duration and volume
+of product browsing are positively associated with the
+odds of purchasing. Returning visitors have substantially
+lower estimated odds of purchasing than new visitors,
+even after accounting for browsing duration, product
+page count, and weekend status.
+
+### 3.3. Preliminary Model Assessment
+
+The main effects model was fitted using 12,245 browsing
+sessions and successfully converged after four iterations.
+
+| Metric | Value |
+|---|---:|
+| Sample size | 12,245 |
+| Null deviance | 10,542 |
+| Residual deviance | 10,101 |
+| AIC | 10,111 |
+
+The reduction from the null deviance to the residual
+deviance indicates that the inclusion of the predictors
+improves model fit relative to an intercept-only model.
+
+However, the main effects model assumes that the association
+between product browsing duration and the log odds of
+purchasing is the same for new and returning visitors.
+To directly address our research question, we will extend
+this model by introducing an interaction term between
+browsing duration and visitor type.
+
+Further assessment of model assumptions and performance
+will be conducted in the model diagnostics section.
+
+
+## 4. Logistic Regression with Interaction
+
+## 5. Model Comparison
+
+## 6. Statistical Inference and Interpretation
+
+## 7. Predicted Purchase Probabilities
