@@ -1215,7 +1215,7 @@ $$\log\left(\frac{p_i}{1-p_i}\right)
 Where:
 
 | Symbol | Description |
-|-------------------------|-----------------------------------------------|
+|--------------------------|----------------------------------------------|
 | $Y_i$ | Purchase outcome (1 = purchase, 0 = no purchase) |
 | $p_i$ | Probability of purchase for session $i$ |
 | $D_i$ | Product browsing duration (minutes) |
@@ -1604,37 +1604,183 @@ knitr::kable(
   browsing duration and purchase odds."
 )
 ```
+
 ### 6.3. Summary of Findings
 
-Product browsing duration was positively and statistically
-significantly associated with purchase odds for both new
-and returning visitors, after accounting for product page
-count and weekend status.
+Product browsing duration was positively and statistically significantly associated with purchase odds for both new and returning visitors, after accounting for product page count and weekend status.
 
-For new visitors, each additional minute spent browsing
-product-related pages was associated with a 2.55% increase
-in the odds of purchasing (OR = 1.0255, 95% CI:
-1.0161–1.0349, p < 0.001).
+For new visitors, each additional minute spent browsing product-related pages was associated with a 2.55% increase in the odds of purchasing (OR = 1.0255, 95% CI: 1.0161–1.0349, p \< 0.001).
 
-For returning visitors, each additional minute was
-associated with a 0.46% increase in the odds of
-purchasing (OR = 1.0046, 95% CI: 1.0016–1.0077,
-p = 0.0029).
+For returning visitors, each additional minute was associated with a 0.46% increase in the odds of purchasing (OR = 1.0046, 95% CI: 1.0016–1.0077, p = 0.0029).
 
-The statistically significant negative interaction
-coefficient indicates that the positive association
-between product browsing duration and purchase odds
-is stronger for new visitors than for returning visitors.
+The statistically significant negative interaction coefficient indicates that the positive association between product browsing duration and purchase odds is stronger for new visitors than for returning visitors.
 
-These findings suggest that product browsing duration
-may be a more informative indicator of purchase intent
-among new visitors. However, the observational nature
-of the data prevents us from establishing a causal
-relationship between browsing duration and purchasing
-behavior.
+These findings suggest that product browsing duration may be a more informative indicator of purchase intent among new visitors. However, the observational nature of the data prevents us from establishing a causal relationship between browsing duration and purchasing behavior.
 
-These conclusions remain subject to further assessment
-of model assumptions and adequacy.
-
+These conclusions remain subject to further assessment of model assumptions and adequacy.
 
 ## 7. Predicted Purchase Probabilities
+
+### 7.1. Generate Predicted Probabilities
+
+To visualize the interaction between product browsing duration and visitor type, predicted purchase probabilities were calculated using the selected interaction model.
+
+Product page count was held constant at its median value of 18 pages. The median was selected because the distribution of product page count is right-skewed, making it less sensitive to extreme observations than the mean. Weekend status was held constant at weekday.
+
+Holding these variables constant allows us to isolate the modeled association between browsing duration and purchase probability across visitor types. Browsing duration was varied from zero to its 95th percentile to focus on the range containing most observed sessions.
+
+```{r}
+# Define range of browsing duration
+duration_range <- seq(
+  from = 0,
+  to = quantile(df_clean$Duration_Minutes, 0.95),
+  length.out = 200
+)
+
+# Create prediction dataset
+prediction_data <- expand.grid(
+  Duration_Minutes = duration_range,
+  VisitorType = levels(df_clean$VisitorType),
+  ProductRelated = median(df_clean$ProductRelated),
+  Weekend = "FALSE"
+)
+
+# Match factor levels to original dataset
+prediction_data$VisitorType <- factor(
+  prediction_data$VisitorType,
+  levels = levels(df_clean$VisitorType)
+)
+
+prediction_data$Weekend <- factor(
+  prediction_data$Weekend,
+  levels = levels(df_clean$Weekend)
+)
+
+# Generate predictions on the log-odds scale
+predictions <- predict(
+  model2,
+  newdata = prediction_data,
+  type = "link",
+  se.fit = TRUE
+)
+
+# Convert log odds to probabilities
+prediction_data <- prediction_data %>%
+  mutate(
+    probability = plogis(predictions$fit),
+    ci_lower = plogis(
+      predictions$fit - qnorm(0.975) * predictions$se.fit
+    ),
+    ci_upper = plogis(
+      predictions$fit + qnorm(0.975) * predictions$se.fit
+    ),
+    Visitor = recode(
+      VisitorType,
+      "New_Visitor" = "New Visitor",
+      "Returning_Visitor" = "Returning Visitor"
+    )
+  )
+```
+
+### 7.2. Visualize Predicted Purchase Probabilities
+
+Predicted purchase probabilities were plotted against product browsing duration for each visitor type. Shaded regions represent pointwise 95% confidence intervals for the estimated probabilities.
+
+```{r}
+#| fig-width: 8
+#| fig-height: 5
+
+ggplot(
+  prediction_data,
+  aes(
+    x = Duration_Minutes,
+    y = probability,
+    color = Visitor,
+    fill = Visitor
+  )
+) +
+  geom_ribbon(
+    aes(ymin = ci_lower, ymax = ci_upper),
+    alpha = 0.15,
+    color = NA
+  ) +
+  geom_line(linewidth = 1.2) +
+  scale_color_manual(
+    values = c(
+      "New Visitor" = "#2563EB",
+      "Returning Visitor" = "#D97706"
+    )
+  ) +
+  scale_fill_manual(
+    values = c(
+      "New Visitor" = "#2563EB",
+      "Returning Visitor" = "#D97706"
+    )
+  ) +
+  scale_y_continuous(
+    labels = scales::label_percent()
+  ) +
+  labs(
+    title = "Predicted Purchase Probability by Visitor Type",
+    subtitle = paste0(
+      "Weekday sessions with ",
+      median(df_clean$ProductRelated),
+      " product pages visited"
+    ),
+    x = "Product Browsing Duration (Minutes)",
+    y = "Predicted Purchase Probability",
+    color = NULL,
+    fill = NULL,
+    caption = "Shaded regions represent pointwise 95% confidence intervals."
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+
+
+```
+
+### 7.3. Interpretation of Predicted Probabilities
+
+The predicted probability curves illustrate the interaction
+between product browsing duration and visitor type. While
+predicted purchase probability increases with browsing
+duration for both visitor groups, the increase is
+substantially greater for new visitors.
+
+To ensure a consistent comparison between visitor types,
+product page count was held constant at its median value
+of 18 pages, and weekend status was held constant at weekday.
+
+Under these conditions, as product browsing duration
+increases from 20 to 60 minutes, the predicted purchase
+probability for new visitors increases from approximately
+28% to 52%. In comparison, the predicted purchase
+probability for returning visitors increases from
+approximately 12% to 14%.
+
+The widening gap between the two curves is consistent
+with the statistically significant interaction identified
+in the regression model. The confidence intervals also
+widen at longer browsing durations, particularly for new
+visitors, indicating greater uncertainty in the estimated
+probabilities.
+
+From a business perspective, these findings suggest that
+product browsing duration may be a more informative
+indicator of purchase intent among new visitors than
+returning visitors.
+
+However, these predictions are conditional on the selected
+control variable values and do not represent average
+purchase probabilities across all visitors. Given the
+strong correlation between product page count and browsing
+duration, predictions at longer durations should be
+interpreted with caution until the observed data support
+for these combinations has been assessed. Additionally,
+the observed associations should not be interpreted as
+causal relationships.
+
