@@ -1,0 +1,1185 @@
+---
+title: "Data Preparation and EDA"
+author: "IDS 702 Team 5"
+format:
+  pdf:
+    number-sections: false
+engine: knitr
+editor: visual
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+## 1 Data Import
+
+```{r}
+# Load packages used for data preparation, summaries, and visualization
+library(tidyverse)
+library(knitr)
+library(moments)
+library(corrplot)
+
+# Import the online shoppers dataset
+df <- read_csv("data/online_shoppers_intention.csv")
+
+# Inspect the dataset dimensions, object class, and variable structure
+dim(df)
+class(df)
+glimpse(df)
+```
+
+## 2 Data Quality Assessment
+
+### 2.1 Missing Values
+
+```{r}
+sum(is.na(df))
+colSums(is.na(df))
+```
+
+No missing values were identified in the dataset.
+
+### 2.2 Duplicate Records
+
+```{r}
+sum(duplicated(df))
+mean(duplicated(df)) * 100
+
+df[duplicated(df), ] %>%
+  count(Revenue)
+```
+
+A total of 125 duplicate records (1.01% of the dataset) were identified, all corresponding to non-purchasing sessions. Since the dataset does not contain unique session identifiers, these records were retained provisionally because identical observations may represent distinct browsing sessions.
+
+### 2.3 Data Types and Summary
+
+```{r}
+sapply(df, class)
+summary(df)
+```
+
+```{r}
+df %>%
+  select(Month, OperatingSystems, Browser, Region,
+         TrafficType, VisitorType, Weekend, Revenue) %>%
+  summarise(across(everything(), n_distinct))
+```
+
+## 3 Unusual Observations
+
+### 3.1 Invalid Values
+
+```{r}
+df %>%
+  summarise(
+    # Count observations with negative page counts
+    negative_counts = sum(
+      Administrative < 0 |
+        Informational < 0 |
+        ProductRelated < 0
+    ),
+    
+    # Count observations with negative browsing durations
+    negative_durations = sum(
+      Administrative_Duration < 0 |
+        Informational_Duration < 0 |
+        ProductRelated_Duration < 0
+    ),
+    
+    # Check if bounce rates fall outside the range [0, 1]
+    invalid_bounce_rates = sum(
+      BounceRates < 0 | BounceRates > 1
+    ),
+    
+    # Check if exit rates fall outside the range [0, 1]
+    invalid_exit_rates = sum(
+      ExitRates < 0 | ExitRates > 1
+    ),
+    
+    # Check if SpecialDay values fall outside the range [0, 1]
+    invalid_special_day = sum(
+      SpecialDay < 0 | SpecialDay > 1
+    )
+  )
+```
+
+No negative page counts, negative browsing durations, or values outside the valid ranges for bounce rate, exit rate, or special-day proximity were identified.
+
+### 3.2 Zero Browsing Duration
+
+```{r}
+df %>%
+  summarise(
+    # Count sessions with zero product browsing duration
+    zero_duration = sum(ProductRelated_Duration == 0),
+    
+    # Count sessions with no product page visits
+    zero_pages = sum(ProductRelated == 0),
+    
+    # Count sessions with page visits but no recorded duration
+    zero_duration_with_pages = sum(
+      ProductRelated_Duration == 0 & ProductRelated > 0
+    ),
+    
+    # Count sessions with recorded duration but no page visits
+    duration_without_pages = sum(
+      ProductRelated_Duration > 0 & ProductRelated == 0
+    )
+  )
+```
+
+A total of 755 sessions had zero product browsing duration, including 717 sessions that visited at least one product-related page. This may reflect the way browsing time was recorded rather than data errors. Therefore, these observations were retained provisionally.
+
+### 3.3 Outlier Detection
+
+```{r}
+# Calculate the 25th and 75th percentiles
+q1 <- quantile(df$ProductRelated_Duration, 0.25)
+q3 <- quantile(df$ProductRelated_Duration, 0.75)
+
+# Calculate the interquartile range
+iqr <- q3 - q1
+
+# Define outlier thresholds using the 1.5 IQR rule
+lower_bound <- q1 - 1.5 * iqr
+upper_bound <- q3 + 1.5 * iqr
+
+# Display the lower and upper thresholds
+lower_bound
+upper_bound
+
+# Count observations outside the defined thresholds
+sum(df$ProductRelated_Duration < lower_bound |
+      df$ProductRelated_Duration > upper_bound)
+```
+
+Using the 1.5 × IQR rule, 961 observations were identified as potential outliers in product browsing duration. The lower and upper bounds were −1,735.89 and 3,384.19 seconds, respectively. These observations were retained provisionally because unusually long browsing durations do not necessarily indicate data errors.
+
+### 3.4 Product Browsing Duration Boxplot
+
+```{r}
+#| label: fig-duration-boxplot
+#| fig-cap: "Distribution of product browsing duration, including potential outliers."
+
+# Set product browsing duration as the y-axis variable
+ggplot(df, aes(y = ProductRelated_Duration)) +
+  
+  # Create a boxplot to display the distribution and outliers
+  geom_boxplot(fill = "steelblue", alpha = 0.6) +
+  
+  # Set the plot title and y-axis label
+  labs(
+    title = "Product Browsing Duration",
+    y = "Duration (seconds)"
+  ) +
+  
+  # Apply a minimal plot theme
+  theme_minimal()
+```
+
+Product browsing duration exhibited a strongly right-skewed distribution with numerous extreme values. A logarithmic transformation was therefore explored to reduce skewness.
+
+## 4 Duration Distribution and Transformation
+
+### 4.1 Convert Duration to Minutes
+
+```{r}
+# Convert product browsing duration from seconds to minutes
+df <- df %>%
+  mutate(Duration_Minutes = ProductRelated_Duration / 60)
+
+# Display descriptive statistics for browsing duration
+summary(df$Duration_Minutes)
+
+# Calculate the standard deviation
+sd(df$Duration_Minutes)
+
+# Calculate skewness of the original distribution
+skewness(df$Duration_Minutes)
+```
+
+Product browsing duration was converted from seconds to minutes for easier interpretation. The average browsing duration was 19.91 minutes, with a median of 9.98 minutes and a standard deviation of 31.89 minutes.
+
+### 4.2 Original Duration Distribution
+
+```{r}
+#| label: fig-original-duration
+#| fig-cap: "Distribution of product browsing duration in minutes. The dashed line marks the median."
+
+ggplot(df, aes(x = Duration_Minutes)) +
+  
+  # Divide browsing duration into 50 histogram bins
+  geom_histogram(bins = 50, fill = "steelblue",
+                 color = "white") +
+  
+  # Add a dashed line representing the median
+  geom_vline(
+    xintercept = median(df$Duration_Minutes),
+    color = "red", linetype = "dashed"
+  ) +
+  
+  # Set the title and axis labels
+  labs(
+    title = "Distribution of Product Browsing Duration",
+    x = "Browsing Duration (minutes)",
+    y = "Number of Sessions"
+  ) +
+  theme_minimal()
+```
+
+The original duration distribution was highly right-skewed, with a skewness of 7.262. Most sessions had relatively short browsing durations, while a small proportion had substantially longer durations.
+
+### 4.3 Log Transformation
+
+```{r}
+# Apply log transformation while preserving zero values
+df <- df %>%
+  mutate(Log_Duration = log1p(Duration_Minutes))
+
+# Display descriptive statistics after transformation
+summary(df$Log_Duration)
+
+# Calculate skewness after transformation
+skewness(df$Log_Duration)
+```
+
+A log(1 + x) transformation was applied to reduce skewness and compress extreme values while preserving zero-duration observations.
+
+### 4.4 Transformed Duration Distribution
+
+```{r}
+#| label: fig-log-duration
+#| fig-cap: "Distribution of log-transformed product browsing duration. The dashed line marks the median."
+
+ggplot(df, aes(x = Log_Duration)) +
+  
+  # Plot the distribution of log-transformed duration
+  geom_histogram(bins = 50, fill = "steelblue",
+                 color = "white") +
+  
+  # Add a dashed line representing the median
+  geom_vline(
+    xintercept = median(df$Log_Duration),
+    color = "red", linetype = "dashed"
+  ) +
+  
+  # Set the title and axis labels
+  labs(
+    title = "Distribution of Log-Transformed Browsing Duration",
+    x = "Log(1 + Duration in Minutes)",
+    y = "Number of Sessions"
+  ) +
+  theme_minimal()
+```
+
+The transformed distribution was substantially more symmetric, although a noticeable concentration of observations remained at zero.
+
+### 4.5 Compare Skewness
+
+```{r}
+#| label: tbl-skewness-comparison
+
+# Compare skewness before and after log transformation
+skewness_table <- tibble(
+  Variable = c("Original Duration", "Log Duration"),
+  Skewness = c(
+    skewness(df$Duration_Minutes),
+    skewness(df$Log_Duration)
+  )
+)
+
+# Display the comparison table
+kable(skewness_table, digits = 3,
+      caption = "Skewness Before and After Log Transformation")
+```
+
+The log transformation reduced skewness from 7.262 to −0.076. Both original and transformed durations were retained for subsequent model development. The final functional form should be determined through model diagnostics rather than predictor normality alone.
+
+## 5 Data Cleaning and Variable Recoding
+
+### 5.1 Examine Visitor Categories
+
+```{r}
+#| label: tbl-visitor-categories-before-restriction
+
+visitor_category_summary <- df %>%
+  # Group sessions by visitor type
+  group_by(VisitorType) %>%
+  
+  summarise(
+    # Count the total number of sessions
+    Sessions = n(),
+    
+    # Count sessions resulting in a purchase
+    Purchases = sum(Revenue),
+    
+    # Calculate the percentage of purchasing sessions
+    Conversion_Rate = mean(Revenue) * 100,
+    
+    # Remove grouping after summarization
+    .groups = "drop"
+  )
+
+# Display the visitor categories with reader-friendly labels
+kable(
+  visitor_category_summary %>%
+    mutate(
+      VisitorType = recode(
+        VisitorType,
+        New_Visitor = "New Visitor",
+        Returning_Visitor = "Returning Visitor"
+      )
+    ),
+  digits = 2,
+  col.names = c(
+    "Visitor Type", "Sessions", "Purchases", "Conversion Rate (%)"
+  ),
+  caption = "Visitor Categories Before the Analytical Restriction"
+)
+```
+
+The dataset contains three visitor categories: new visitors, returning visitors, and other visitors. The Other category contains only 85 observations, representing approximately 0.69% of the dataset. Since the research question focuses on new and returning visitors, the Other category is excluded from the proposed analytical dataset.
+
+### 5.2 Create Analytical Dataset
+
+```{r}
+df_clean <- df %>%
+  
+  # Retain only new and returning visitors
+  filter(VisitorType %in% c("New_Visitor", "Returning_Visitor")) %>%
+  
+  mutate(
+    # Convert the binary outcome from TRUE/FALSE to 1/0
+    Revenue = as.integer(Revenue),
+    
+    # Set new visitors as the reference category
+    VisitorType = factor(
+      VisitorType,
+      levels = c("New_Visitor", "Returning_Visitor")
+    ),
+    
+    # Convert numeric category codes into factors
+    OperatingSystems = factor(OperatingSystems),
+    Browser = factor(Browser),
+    Region = factor(Region),
+    TrafficType = factor(TrafficType),
+    
+    # Convert month into a categorical variable
+    Month = factor(Month),
+    
+    # Convert weekend status into a binary factor
+    Weekend = factor(Weekend, levels = c(FALSE, TRUE))
+  )
+```
+
+The purchase outcome was recoded as a binary variable, with 1 representing a purchase and 0 representing no purchase. Visitor type was converted into a factor, with new visitors as the reference category. Other categorical variables were converted into factors to prevent their numerical codes from being interpreted as continuous measurements.
+
+### 5.3 Verify the Cleaned Dataset
+
+```{r}
+# Check the number of observations and variables
+dim(df_clean)
+
+# Inspect the updated variable types
+glimpse(df_clean)
+
+# Verify the visitor type reference category
+levels(df_clean$VisitorType)
+
+# Check the distribution of the binary outcome
+table(df_clean$Revenue)
+
+# Check whether recoding introduced missing values
+sum(is.na(df_clean))
+```
+
+The cleaned dataset contains 12,245 observations and 20 variables, including the original browsing duration, duration in minutes, and log-transformed duration. All variables were successfully recoded, and no missing values were introduced during data preparation.
+
+### 5.4 Data Cleaning Summary
+
+```{r}
+#| label: tbl-cleaning-summary
+
+# Create a summary of observations before and after cleaning
+cleaning_summary <- tibble(
+  Description = c(
+    "Original dataset",
+    "Excluded other visitors",
+    "Final analytical dataset"
+  ),
+  
+  # Calculate the corresponding observation counts
+  Observations = c(
+    nrow(df),
+    nrow(df) - nrow(df_clean),
+    nrow(df_clean)
+  )
+)
+
+# Calculate each count as a percentage of the original dataset
+cleaning_summary <- cleaning_summary %>%
+  mutate(
+    Percentage = Observations / nrow(df) * 100
+  )
+
+# Display the formatted cleaning summary table
+kable(
+  cleaning_summary,
+  digits = 2,
+  caption = "Data Cleaning Summary"
+)
+```
+
+A total of 85 observations were excluded based on the visitor type restriction. The resulting analytical dataset retained 99.31% of the original observations. No additional observations were removed solely because of duplicate values, zero browsing durations, or potential outliers.
+
+### 5.5 Export Cleaned Dataset
+
+```{r}
+# Export the cleaned dataset as a CSV file
+write_csv(
+  df_clean,
+  "data/online_shoppers_cleaned.csv"
+)
+
+# Save the R dataset while preserving factor levels and data types
+saveRDS(
+  df_clean,
+  "data/online_shoppers_cleaned.rds"
+)
+```
+
+## 6 Exploratory Data Analysis (EDA)
+
+### 6.1 Descriptive Statistics
+
+#### 6.1.1 Numerical Variables
+
+```{r}
+#| label: tbl-numerical-descriptive-statistics
+
+descriptive_stats <- df_clean %>%
+  
+  # Select numerical variables relevant to the analysis
+  select(
+    Administrative,
+    Administrative_Duration,
+    Informational,
+    Informational_Duration,
+    ProductRelated,
+    Duration_Minutes,
+    Log_Duration,
+    BounceRates,
+    ExitRates,
+    PageValues,
+    SpecialDay
+  ) %>%
+  
+  # Convert numerical variables into a long-format dataset
+  pivot_longer(
+    cols = everything(),
+    names_to = "Variable",
+    values_to = "Value"
+  ) %>%
+  
+  # Group values by their original variable names
+  group_by(Variable) %>%
+  
+  summarise(
+    # Calculate measures of central tendency
+    Mean = mean(Value),
+    Median = median(Value),
+    
+    # Calculate standard deviation
+    SD = sd(Value),
+    
+    # Calculate the first and third quartiles
+    Q1 = quantile(Value, 0.25),
+    Q3 = quantile(Value, 0.75),
+    
+    # Identify minimum and maximum values
+    Min = min(Value),
+    Max = max(Value),
+    
+    .groups = "drop"
+  ) %>%
+
+  # Replace code-style variable names with reader-friendly labels
+  mutate(
+    Variable = recode(
+      Variable,
+      Administrative = "Administrative Pages",
+      Administrative_Duration = "Administrative Duration (seconds)",
+      Informational = "Informational Pages",
+      Informational_Duration = "Informational Duration (seconds)",
+      ProductRelated = "Product Pages",
+      Duration_Minutes = "Product Duration (minutes)",
+      Log_Duration = "Log Product Duration",
+      BounceRates = "Bounce Rate",
+      ExitRates = "Exit Rate",
+      PageValues = "Page Value",
+      SpecialDay = "Special-Day Proximity"
+    )
+  )
+
+# Display the formatted descriptive statistics table
+kable(
+  descriptive_stats,
+  digits = 3,
+  caption = "Descriptive Statistics of Numerical Variables"
+)
+```
+
+The average product browsing duration was 19.98 minutes, with a median of 10.04 minutes and a standard deviation of 31.95 minutes. The difference between the mean and median indicates a right-skewed distribution and substantial variation in product engagement across sessions.
+
+#### 6.1.2 Categorical Variables
+
+```{r}
+#| label: tbl-categorical-descriptive-statistics
+
+categorical_stats <- df_clean %>%
+  
+  # Select categorical variables of interest
+  select(VisitorType, Weekend, Month, Revenue) %>%
+  
+  # Convert selected variables to character for reshaping
+  mutate(across(everything(), as.character)) %>%
+  
+  # Reshape categorical variables into long format
+  pivot_longer(
+    cols = everything(),
+    names_to = "Variable",
+    values_to = "Category"
+  ) %>%
+  
+  # Count observations within each category
+  count(Variable, Category, name = "Frequency") %>%
+  
+  # Calculate percentages within each variable
+  group_by(Variable) %>%
+  mutate(
+    Percentage = Frequency / sum(Frequency) * 100
+  ) %>%
+  
+  # Remove grouping after calculation
+  ungroup() %>%
+
+  # Replace code-style values with reader-friendly display labels
+  mutate(
+    Variable = recode(
+      Variable,
+      VisitorType = "Visitor Type",
+      Weekend = "Weekend Session",
+      Month = "Month",
+      Revenue = "Purchase Outcome"
+    ),
+    Category = recode(
+      Category,
+      New_Visitor = "New Visitor",
+      Returning_Visitor = "Returning Visitor",
+      `FALSE` = "No",
+      `TRUE` = "Yes",
+      `0` = "No Purchase",
+      `1` = "Purchase"
+    )
+  )
+
+# Display the categorical summary table
+kable(
+  categorical_stats,
+  digits = 2,
+  caption = "Descriptive Statistics of Categorical Variables"
+)
+```
+
+Returning visitors accounted for the majority of the analytical sample (86.16%), while new visitors represented 13.84%. This imbalance in visitor composition should be considered when interpreting subsequent comparisons between the two groups.
+
+### 6.2 Purchase Outcome Distribution
+
+#### 6.2.1 Calculate Purchase Distribution
+
+```{r}
+#| label: tbl-purchase-outcome-distribution
+
+# Group sessions by purchase outcome and count observations
+purchase_distribution <- df_clean %>%
+  count(Revenue, name = "Sessions") %>%
+  
+  mutate(
+    # Calculate the percentage of each purchase outcome
+    Percentage = Sessions / sum(Sessions) * 100,
+    
+    # Replace numeric outcome codes with descriptive labels
+    Purchase = factor(
+      Revenue,
+      levels = c(0, 1),
+      labels = c("No Purchase", "Purchase")
+    )
+  )
+
+# Display the purchase outcome summary
+kable(
+  purchase_distribution %>%
+    select(Purchase, Sessions, Percentage),
+  digits = 2,
+  caption = "Purchase Outcome Distribution"
+)
+```
+
+#### 6.2.2 Visualize Purchase Distribution
+
+```{r}
+#| label: fig-purchase-outcome-distribution
+#| fig-cap: "Distribution of purchase outcomes in the analytical sample."
+
+ggplot(purchase_distribution,
+       aes(x = Purchase, y = Percentage, fill = Purchase)) +
+  
+  # Create bars using the calculated percentages
+  geom_col(width = 0.6) +
+  
+  # Display percentages above each bar
+  geom_text(
+    aes(label = sprintf("%.2f%%", Percentage)),
+    vjust = -0.5,
+    size = 4
+  ) +
+  
+  # Assign colors to the two purchase outcomes
+  scale_fill_manual(
+    values = c("steelblue", "seagreen")
+  ) +
+  
+  # Set the percentage axis from 0 to 100
+  scale_y_continuous(
+    limits = c(0, 100),
+    breaks = seq(0, 100, 20),
+    labels = function(x) paste0(x, "%")
+  ) +
+  
+  # Set the plot title and axis labels
+  labs(
+    title = "Purchase Outcome Distribution",
+    x = "Purchase Outcome",
+    y = "Percentage of Sessions"
+  ) +
+  
+  # Apply a minimal theme and remove the redundant legend
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+Among the 12,245 sessions, 1,892 (15.45%) resulted in a purchase, while 10,353 (84.55%) did not. This indicates a substantial class imbalance in the purchase outcome. Consequently, classification accuracy alone may be misleading when evaluating model performance.
+
+### 6.3 Product Browsing Duration Distribution
+
+#### 6.3.1 Prepare Distribution Data
+
+```{r}
+duration_distribution <- df_clean %>%
+  
+  # Select original and log-transformed browsing durations
+  select(Duration_Minutes, Log_Duration) %>%
+  
+  # Reshape the data to compare both distributions
+  pivot_longer(
+    cols = everything(),
+    names_to = "Transformation",
+    values_to = "Duration"
+  ) %>%
+  
+  # Assign descriptive labels to both distributions
+  mutate(
+    Transformation = factor(
+      Transformation,
+      levels = c("Duration_Minutes", "Log_Duration"),
+      labels = c(
+        "Original Duration (Minutes)",
+        "Log-Transformed Duration"
+      )
+    )
+  )
+```
+
+#### 6.3.2 Visualize Both Distributions
+
+```{r}
+#| label: fig-duration-transformation-comparison
+#| fig-cap: "Product browsing duration before and after the log transformation. Panels use independent axis scales."
+#| fig-width: 9
+#| fig-height: 4.5
+
+ggplot(duration_distribution, aes(x = Duration)) +
+  
+  # Create histograms for both duration measurements
+  geom_histogram(
+    bins = 50,
+    fill = "steelblue",
+    color = "white"
+  ) +
+  
+  # Allow independent axis scales for both distributions
+  facet_wrap(
+    ~ Transformation,
+    scales = "free",
+    ncol = 2
+  ) +
+  
+  # Set the title and axis labels
+  labs(
+    title = "Product Browsing Duration Before and After Transformation",
+    x = "Browsing Duration",
+    y = "Number of Sessions"
+  ) +
+  
+  # Apply a consistent visual theme
+  theme_minimal()
+```
+
+Product browsing duration was strongly right-skewed, with most sessions concentrated at shorter durations. The log transformation produced a substantially more symmetric distribution while preserving zero-duration sessions. Because the panels use independent axis scales, their bar heights should not be compared directly.
+
+### 6.4 Conversion Rate by Visitor Type
+
+#### 6.4.1 Calculate Conversion Rates
+
+```{r}
+#| label: tbl-conversion-rate-by-visitor-type
+
+visitor_conversion <- df_clean %>%
+  
+  # Group sessions by visitor type
+  group_by(VisitorType) %>%
+  
+  summarise(
+    # Count total sessions within each visitor group
+    Sessions = n(),
+    
+    # Count sessions resulting in a purchase
+    Purchases = sum(Revenue),
+    
+    # Calculate the purchase conversion rate
+    Conversion_Rate = mean(Revenue) * 100,
+    
+    .groups = "drop"
+  ) %>%
+  
+  # Replace category codes with descriptive labels
+  mutate(
+    Visitor = factor(
+      VisitorType,
+      levels = c("New_Visitor", "Returning_Visitor"),
+      labels = c("New Visitor", "Returning Visitor")
+    )
+  )
+
+# Display the conversion rate summary table
+kable(
+  visitor_conversion %>%
+    select(Visitor, Sessions, Purchases, Conversion_Rate),
+  digits = 2,
+  col.names = c(
+    "Visitor Type", "Sessions", "Purchases", "Conversion Rate (%)"
+  ),
+  caption = "Purchase Conversion Rates by Visitor Type"
+)
+```
+
+#### 6.4.2 Visualize Conversion Rates
+
+```{r}
+#| label: fig-conversion-rate-by-visitor-type
+#| fig-cap: "Observed purchase conversion rates for new and returning visitors."
+
+ggplot(visitor_conversion,
+       aes(x = Visitor, y = Conversion_Rate, fill = Visitor)) +
+  
+  # Create bars representing group-specific conversion rates
+  geom_col(width = 0.6) +
+  
+  # Display conversion percentages above each bar
+  geom_text(
+    aes(label = sprintf("%.2f%%", Conversion_Rate)),
+    vjust = -0.5,
+    size = 4
+  ) +
+  
+  # Assign distinct colors to visitor groups
+  scale_fill_manual(
+    values = c("steelblue", "seagreen")
+  ) +
+  
+  # Format the y-axis as percentages
+  scale_y_continuous(
+    labels = function(x) paste0(x, "%"),
+    expand = expansion(mult = c(0, 0.15))
+  ) +
+  
+  # Set the title and axis labels
+  labs(
+    title = "Purchase Conversion Rate by Visitor Type",
+    x = "Visitor Type",
+    y = "Conversion Rate"
+  ) +
+  
+  # Apply a minimal theme and remove the redundant legend
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+New visitors had a higher observed purchase conversion rate (24.91%) than returning visitors (13.93%), a difference of 10.98 percentage points. However, this unadjusted comparison does not account for differences in browsing behavior or other session characteristics.
+
+### 6.5 Browsing Duration and Conversion by Visitor Type
+
+#### 6.5.1 Create Duration Groups
+
+```{r}
+#| label: tbl-conversion-by-duration-and-visitor-type
+
+duration_conversion <- df_clean %>%
+  
+  mutate(
+    # Divide browsing duration into meaningful time intervals
+    Duration_Group = cut(
+      Duration_Minutes,
+      breaks = c(0, 5, 10, 20, 30, 60, Inf),
+      labels = c(
+        "0-5 min",
+        "5-10 min",
+        "10-20 min",
+        "20-30 min",
+        "30-60 min",
+        "60+ min"
+      ),
+      include.lowest = TRUE,
+      right = FALSE
+    )
+  ) %>%
+  
+  # Group sessions by browsing duration and visitor type
+  group_by(Duration_Group, VisitorType) %>%
+  
+  summarise(
+    # Count sessions within each group
+    Sessions = n(),
+    
+    # Count sessions resulting in purchases
+    Purchases = sum(Revenue),
+    
+    # Calculate the purchase conversion rate
+    Conversion_Rate = mean(Revenue) * 100,
+    
+    .groups = "drop"
+  )
+
+# Display conversion rates across duration and visitor groups
+kable(
+  duration_conversion %>%
+    mutate(
+      VisitorType = recode(
+        as.character(VisitorType),
+        New_Visitor = "New Visitor",
+        Returning_Visitor = "Returning Visitor"
+      )
+    ),
+  digits = 2,
+  col.names = c(
+    "Duration Group", "Visitor Type", "Sessions",
+    "Purchases", "Conversion Rate (%)"
+  ),
+  caption = "Purchase Conversion by Duration and Visitor Type"
+)
+```
+
+#### 6.5.2 Visualize Duration and Conversion
+
+```{r}
+#| label: fig-conversion-by-duration-and-visitor-type
+#| fig-cap: "Observed purchase conversion rates across browsing-duration groups for new and returning visitors."
+#| fig-width: 8
+#| fig-height: 5
+
+ggplot(
+  duration_conversion,
+  aes(
+    x = Duration_Group,
+    y = Conversion_Rate,
+    color = VisitorType,
+    group = VisitorType
+  )
+) +
+  
+  # Connect conversion rates across duration groups
+  geom_line(linewidth = 1) +
+  
+  # Display the observed conversion rate for each group
+  geom_point(size = 3) +
+  
+  # Assign colors and descriptive labels to visitor types
+  scale_color_manual(
+    values = c("steelblue", "seagreen"),
+    labels = c("New Visitor", "Returning Visitor")
+  ) +
+  
+  # Format the conversion rate axis as percentages
+  scale_y_continuous(
+    labels = function(x) paste0(x, "%"),
+    expand = expansion(mult = c(0.05, 0.1))
+  ) +
+  
+  # Set the plot title, axis labels, and legend title
+  labs(
+    title = "Purchase Conversion by Browsing Duration and Visitor Type",
+    x = "Product Browsing Duration",
+    y = "Conversion Rate",
+    color = "Visitor Type"
+  ) +
+  
+  # Apply a minimal theme and position the legend
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+Purchase conversion rates generally increased with product browsing duration for both visitor types. New visitors consistently exhibited higher conversion rates than returning visitors across all duration groups. The difference between the two groups varied with browsing duration, suggesting a potential interaction between browsing duration and visitor type. However, the conversion rate for new visitors in the 60+ minute group should be interpreted cautiously due to the small sample size (n = 15). Further regression analysis is required to determine whether the interaction is statistically significant.
+
+### 6.6 Relationships Between Potential Confounders
+
+#### 6.6.1 Correlation Matrix
+
+```{r}
+# Select numerical predictors relevant to browsing behavior
+correlation_data <- df_clean %>%
+  select(
+    Administrative,
+    Administrative_Duration,
+    Informational,
+    Informational_Duration,
+    ProductRelated,
+    Duration_Minutes,
+    BounceRates,
+    ExitRates,
+    SpecialDay
+  )
+
+# Calculate Pearson correlation coefficients
+correlation_matrix <- cor(
+  correlation_data,
+  method = "pearson"
+)
+
+# Store correlation coefficients rounded to three decimals
+# for concise reporting without printing a duplicate wide matrix
+correlation_matrix_rounded <- round(correlation_matrix, 3)
+```
+
+#### 6.6.2 Visualize the Correlation Matrix
+
+```{r}
+#| label: fig-predictor-correlation-matrix
+#| fig-cap: "Pearson correlations among selected numerical predictors."
+#| fig-width: 8
+#| fig-height: 7
+
+# Create descriptive labels for numerical predictors
+variable_labels <- c(
+  "Administrative Pages",
+  "Administrative Duration",
+  "Informational Pages",
+  "Informational Duration",
+  "Product Pages",
+  "Product Duration",
+  "Bounce Rate",
+  "Exit Rate",
+  "Special Day"
+)
+
+# Replace variable names with descriptive labels
+colnames(correlation_matrix) <- variable_labels
+rownames(correlation_matrix) <- variable_labels
+
+# Visualize correlations using a lower triangular heatmap
+corrplot(
+  correlation_matrix,
+  method = "color",
+  type = "lower",
+  
+  # Display correlation coefficients inside each cell
+  addCoef.col = "black",
+  number.cex = 0.55,
+  
+  # Format variable labels
+  tl.col = "black",
+  tl.srt = 45,
+  tl.cex = 0.7,
+  
+  # Hide the diagonal self-correlations
+  diag = FALSE,
+  
+  # Define colors for negative and positive correlations
+  col = colorRampPalette(
+    c("firebrick", "white", "steelblue")
+  )(200),
+
+  # Reduce outer margins so labels remain attached to the matrix
+  mar = c(0, 0, 1, 0)
+)
+```
+
+#### 6.6.3 Identify Highly Correlated Variables
+
+```{r}
+#| label: tbl-highly-correlated-predictors
+
+# Identify strongly correlated variable pairs
+high_correlations <- which(
+  abs(correlation_matrix) >= 0.7 &
+    upper.tri(correlation_matrix),
+  arr.ind = TRUE
+)
+
+# Create a table of strongly correlated predictors
+high_correlation_table <- tibble(
+  
+  # Extract the names of the first and second variables
+  Variable_1 = rownames(correlation_matrix)[
+    high_correlations[, 1]
+  ],
+  Variable_2 = colnames(correlation_matrix)[
+    high_correlations[, 2]
+  ],
+  
+  # Extract the corresponding correlation coefficients
+  Correlation = correlation_matrix[high_correlations]
+) %>%
+  
+  # Sort variable pairs by absolute correlation strength
+  arrange(desc(abs(Correlation)))
+
+# Display the formatted correlation table
+kable(
+  high_correlation_table,
+  digits = 3,
+  col.names = c("Variable 1", "Variable 2", "Correlation"),
+  caption = "Highly Correlated Numerical Predictors"
+)
+```
+
+The correlation analysis identified two strongly correlated predictor pairs: bounce rate and exit rate (r = 0.913), and product page count and product browsing duration (r = 0.861). Including both variables from either pair may introduce multicollinearity. These relationships should be considered during covariate selection and further assessed using variance inflation factors (VIF).
+
+#### 6.6.4 Examine Categorical Session Characteristics
+
+```{r}
+#| label: tbl-session-characteristics-by-visitor-type
+
+# Group sessions by visitor type
+session_characteristics <- df_clean %>%
+  group_by(VisitorType) %>%
+  
+  summarise(
+    # Calculate the average product browsing duration
+    Mean_Duration = mean(Duration_Minutes),
+    
+    # Calculate the median product browsing duration
+    Median_Duration = median(Duration_Minutes),
+    
+    # Calculate the average number of product pages visited
+    Mean_Product_Pages = mean(ProductRelated),
+    
+    # Calculate the percentage of weekend sessions
+    Weekend_Percentage = mean(Weekend == "TRUE") * 100,
+    
+    .groups = "drop"
+  )
+
+# Display browsing characteristics by visitor type
+kable(
+  session_characteristics %>%
+    mutate(
+      VisitorType = recode(
+        as.character(VisitorType),
+        New_Visitor = "New Visitor",
+        Returning_Visitor = "Returning Visitor"
+      )
+    ),
+  digits = 2,
+  col.names = c(
+    "Visitor Type", "Mean Duration (min)", "Median Duration (min)",
+    "Mean Product Pages", "Weekend Sessions (%)"
+  ),
+  caption = "Session Characteristics by Visitor Type"
+)
+```
+
+Returning visitors spent more time browsing product-related pages than new visitors, averaging 21.49 minutes compared with 10.61 minutes. They also visited more product-related pages per session (34.08 versus 18.05). Despite greater observed product engagement, returning visitors had a lower overall purchase conversion rate. These differences highlight the importance of accounting for browsing behaviors and session characteristics when examining purchase conversion.
+
+## 7 Summary of EDA Findings
+
+The final analytical dataset consisted of 12,245 browsing sessions, of which 15.45% resulted in a purchase. Returning visitors represented 86.17% of the sample.
+
+Product browsing duration was highly right-skewed, and a log transformation substantially reduced skewness while preserving zero-duration observations.
+
+New visitors exhibited a higher overall conversion rate than returning visitors (24.91% versus 13.93%), despite spending less time browsing product-related pages and visiting fewer product pages on average.
+
+Purchase conversion rates generally increased with browsing duration for both visitor types. However, the difference in conversion rates varied across duration groups, suggesting that visitor type may modify the relationship between product engagement and purchase conversion. Estimates for new visitors in the longest duration group should be interpreted cautiously due to the small sample size.
+
+The correlation analysis also identified strong relationships between bounce rate and exit rate (r = 0.913) and between product page count and browsing duration (r = 0.861), highlighting potential multicollinearity concerns.
+
+These exploratory findings motivate a multiple logistic regression model incorporating an interaction between product browsing duration and visitor type while accounting for relevant browsing behaviors and session characteristics.
+
+## 8 Report Contributions
+
+### 8.1 Problem Motivation and Stakeholder Context
+
+Understanding how online browsing behavior relates to purchase conversion is important for e-commerce businesses seeking to improve customer experience and sales performance. Online shoppers may abandon their shopping carts because they are browsing or comparing products rather than intending to make an immediate purchase (Holst, 2025).
+
+Previous research has demonstrated the usefulness of browsing behavior in predicting online purchase intentions (Sakar et al., 2019). However, the relationship between product engagement and purchase conversion may differ between new and returning visitors.
+
+This analysis is intended for e-commerce product managers seeking to understand customer behavior and identify opportunities for segment-specific website optimization.
+
+### 8.2 Research Question
+
+How does the relationship between engagement with product-related pages and the likelihood of completing an online purchase differ between new and returning visitors, after accounting for other browsing behaviors and session characteristics?
+
+### 8.3 Key Descriptive Findings
+
+Among the 12,245 browsing sessions analyzed, 15.45% resulted in a purchase. New visitors had a higher observed conversion rate than returning visitors (24.91% versus 13.93%), despite spending less time browsing product-related pages on average (10.61 versus 21.49 minutes).
+
+Purchase conversion rates generally increased with browsing duration for both visitor types, although the difference between their conversion rates varied across duration groups. These findings motivate further investigation of the interaction between browsing duration and visitor type.
+
+These descriptive findings are unadjusted and should not be interpreted as causal relationships.
+
+### 8.4 Technical Appendix
+
+#### 8.4.1 Dataset and Study Population
+
+This study uses the Online Shoppers Purchasing Intention Dataset from the UCI Machine Learning Repository (Sakar & Kastro, 2018). The original dataset contains 12,330 browsing sessions and 18 variables, including browsing behavior, visitor characteristics, session attributes, and purchase outcomes.
+
+The unit of analysis is an individual browsing session. The outcome variable, Revenue, indicates whether a session resulted in a purchase. The primary explanatory variables are product browsing duration and visitor type.
+
+The analytical population was restricted to new and returning visitors, resulting in a final sample of 12,245 sessions.
+
+#### 8.4.2 Data Cleaning and Exclusions
+
+No missing values were identified in the original dataset. A total of 125 duplicate records were detected and provisionally retained because unique session identifiers were unavailable.
+
+Additionally, 755 sessions had zero recorded product browsing duration, and 961 observations were identified as potential outliers using the 1.5 × IQR rule. No observations were removed solely based on these characteristics because they did not necessarily indicate data errors.
+
+The Other visitor category was excluded because it fell outside the scope of the research question. This removed 85 observations, retaining 99.31% of the original dataset.
+
+Categorical predictors were converted into factors, with new visitors serving as the reference category for visitor type. The purchase outcome was recoded as 0 for no purchase and 1 for purchase.
+
+#### 8.4.3 Variable Transformation
+
+Product browsing duration was converted from seconds to minutes to facilitate interpretation. In the original dataset, the duration distribution was highly right-skewed, with a skewness of 7.262.
+
+A log(1 + x) transformation reduced skewness to −0.076 while preserving zero-duration observations. Both untransformed and transformed durations were retained for subsequent model development.
+
+The final functional form should be determined based on model specification and diagnostic assessment rather than predictor normality alone.
+
+## 9 References
+
+Holst, C. (2025, February 2). *Reasons for cart abandonment – Why 70% of users abandon their cart*. Baymard Institute. <https://baymard.com/research-articles/ecommerce-checkout-usability-report-and-benchmark>
+
+Sakar, C. O., & Kastro, Y. (2018). *Online shoppers purchasing intention dataset* \[Data set\]. UCI Machine Learning Repository. <https://doi.org/10.24432/C5F88Q>
+
+Sakar, C. O., Polat, S. O., Katircioglu, M., & Kastro, Y. (2019). Real-time prediction of online shoppers’ purchasing intention using multilayer perceptron and LSTM recurrent neural networks. *Neural Computing and Applications, 31*, 6893–6908. <https://doi.org/10.1007/s00521-018-3523-0>
