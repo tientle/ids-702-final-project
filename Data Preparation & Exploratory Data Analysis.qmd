@@ -1215,7 +1215,7 @@ $$\log\left(\frac{p_i}{1-p_i}\right)
 Where:
 
 | Symbol | Description |
-|----|----|
+|-------------------------|-----------------------------------------------|
 | $Y_i$ | Purchase outcome (1 = purchase, 0 = no purchase) |
 | $p_i$ | Probability of purchase for session $i$ |
 | $D_i$ | Product browsing duration (minutes) |
@@ -1327,7 +1327,179 @@ model2 <- glm(
 summary(model2)
 ```
 
+### 4.2. Coefficient Estimates
+
+All predictors, including the interaction term between product browsing duration and visitor type, were statistically significant at the 0.05 significance level.
+
+```{r}
+# Calculate odds ratios and 95% confidence intervals
+model2_results <- tidy(
+  model2,
+  conf.int = TRUE,
+  conf.level = 0.95,
+  exponentiate = TRUE
+)
+
+model2_results
+```
+
+### 4.3. Interpretation of Interaction Effect
+
+The interaction between product browsing duration and returning visitor status was negative and statistically significant ($\hat{\beta}_5 = -0.020527$, $p < 0.001$). This provides evidence that the association between product browsing duration and the log odds of purchasing differs between new and returning visitors.
+
+For new visitors, the estimated change in log odds for each additional minute of product browsing is:
+
+$$\hat{\beta}_1 = 0.025137$$
+
+For returning visitors, the estimated change in log odds for each additional minute of product browsing is:
+
+$$\hat{\beta}_1 + \hat{\beta}_5
+= 0.025137 - 0.020527
+= 0.004610$$
+
+```{r}
+# Extract duration and interaction coefficients
+beta_duration <- coef(model2)["Duration_Minutes"]
+
+beta_interaction <- coef(model2)[
+  "Duration_Minutes:VisitorTypeReturning_Visitor"
+]
+
+# Calculate visitor-specific odds ratios
+or_new <- exp(beta_duration)
+or_returning <- exp(beta_duration + beta_interaction)
+
+# Summarize visitor-specific effects
+visitor_effects <- tibble(
+  `Visitor Type` = c("New Visitor", "Returning Visitor"),
+  `Log-Odds Coefficient` = c(
+    beta_duration,
+    beta_duration + beta_interaction
+  ),
+  `Odds Ratio` = c(or_new, or_returning),
+  `Percent Change in Odds` = c(
+    (or_new - 1) * 100,
+    (or_returning - 1) * 100
+  )
+)
+
+knitr::kable(
+  visitor_effects,
+  digits = 4,
+  caption = "Estimated association between browsing duration
+  and purchase odds by visitor type."
+)
+```
+
+Holding product page count and weekend status constant:
+
+- **New visitors:** Each additional minute spent browsing product-related pages is associated with approximately 2.55% higher odds of purchasing.
+
+- **Returning visitors:** Each additional minute spent browsing product-related pages is associated with approximately 0.46% higher odds of purchasing.
+
+- **Interaction effect:** The negative interaction coefficient indicates that the positive association between browsing duration and purchase odds is weaker for returning visitors than for new visitors.
+
+These findings suggest that visitor type moderates the relationship between product browsing duration and purchase odds. However, these results describe statistical associations rather than causal relationships.
+
+### 4.4. Preliminary Model Assessment
+
+The interaction model was fitted using 12,245 browsing sessions and successfully converged after four iterations.
+
+| Metric            |  Value |
+|-------------------|-------:|
+| Sample size       | 12,245 |
+| Null deviance     | 10,542 |
+| Residual deviance | 10,080 |
+| AIC               | 10,092 |
+
+Compared with the main effects model, the interaction model has a lower residual deviance and AIC, providing preliminary evidence of improved model fit.
+
+A formal likelihood ratio test will be conducted to determine whether including the interaction term significantly improves model fit.
+
 ## 5. Model Comparison
+
+The main effects model and interaction model were compared using a likelihood ratio test and Akaike Information Criterion (AIC) to determine whether including the interaction term improves model fit.
+
+### 5.1. Likelihood Ratio Test
+
+Because the main effects model is nested within the interaction model, a likelihood ratio test can be used to assess whether the additional interaction term significantly improves model fit.
+
+The hypotheses are:
+
+$$H_0: \beta_5 = 0$$
+
+$$H_A: \beta_5 \neq 0$$
+
+Under the null hypothesis, the association between product browsing duration and the log odds of purchasing does not differ between new and returning visitors.
+
+The test statistic is calculated as:
+
+$$\Lambda = 2[\ell(M_2) - \ell(M_1)]$$
+
+where $\ell(M_1)$ and $\ell(M_2)$ represent the log-likelihoods of the main effects and interaction models, respectively. Under the null hypothesis, the test statistic approximately follows a chi-square distribution with one degree of freedom.
+
+```{r}
+# Compare nested models using a likelihood ratio test
+anova(model1, model2, test = "Chisq")
+```
+
+### 5.2. AIC Comparison
+
+Akaike Information Criterion (AIC) was used to compare the two models while accounting for differences in model complexity. A lower AIC indicates a more favorable balance between model fit and complexity.
+
+```{r}
+# Compare model fit statistics
+model_comparison <- tibble(
+  Model = c("Main Effects Model", "Interaction Model"),
+  Parameters = c(
+    length(coef(model1)),
+    length(coef(model2))
+  ),
+  `Residual Deviance` = c(
+    deviance(model1),
+    deviance(model2)
+  ),
+  AIC = c(AIC(model1), AIC(model2))
+)
+
+knitr::kable(
+  model_comparison,
+  digits = 2,
+  caption = "Comparison of logistic regression models."
+)
+```
+
+The interaction model has a lower AIC than the main effects model, suggesting that the improvement in model fit outweighs the penalty for including an additional parameter.
+
+### 5.3. Model Selection
+
+The likelihood ratio test indicated that the interaction
+model provided a statistically significant improvement
+in fit compared to the main effects model
+($\chi^2(1) = 20.688$, $p < 0.001$).
+Therefore, we reject the null hypothesis that the
+interaction coefficient is equal to zero.
+
+The interaction model also had a lower AIC (10,092.25)
+than the main effects model (10,110.94), representing
+a reduction of 18.69. This suggests that the improvement
+in model fit outweighs the penalty for including an
+additional parameter.
+
+Based on both the likelihood ratio test and AIC
+comparison, the interaction model was selected as
+the preferred model for subsequent statistical inference
+and interpretation.
+
+These results provide evidence that the association
+between product browsing duration and the log odds of
+purchasing differs between new and returning visitors,
+after accounting for product page count and weekend
+status.
+
+The selected model will undergo further diagnostic
+assessment to evaluate model assumptions and performance.
+
 
 ## 6. Statistical Inference and Interpretation
 
