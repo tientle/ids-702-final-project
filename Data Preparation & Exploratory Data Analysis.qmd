@@ -1,7 +1,7 @@
 ---
 title: "Browsing to Buying - Analyzing shoppers' online purchase conversions"
 subtitle: "Haoye Xu, Tien Le, Yiran Chen"
-author: "IDS 702 | Team 5"
+author: "IDS 702 | Team 5 "
 format:
   pdf:
     number-sections: false
@@ -1745,42 +1745,16 @@ ggplot(
 
 ### 7.3. Interpretation of Predicted Probabilities
 
-The predicted probability curves illustrate the interaction
-between product browsing duration and visitor type. While
-predicted purchase probability increases with browsing
-duration for both visitor groups, the increase is
-substantially greater for new visitors.
+The predicted probability curves illustrate the interaction between product browsing duration and visitor type. While predicted purchase probability increases with browsing duration for both visitor groups, the increase is substantially greater for new visitors.
 
-To ensure a consistent comparison between visitor types,
-product page count was held constant at its median value
-of 18 pages, and weekend status was held constant at weekday.
+To ensure a consistent comparison between visitor types, product page count was held constant at its median value of 18 pages, and weekend status was held constant at weekday.
 
-Under these conditions, as product browsing duration
-increases from 20 to 60 minutes, the predicted purchase
-probability for new visitors increases from approximately
-28% to 52%. In comparison, the predicted purchase
-probability for returning visitors increases from
-approximately 12% to 14%.
+Under these conditions, as product browsing duration increases from 20 to 60 minutes, the predicted purchase probability for new visitors increases from approximately 28% to 52%. In comparison, the predicted purchase probability for returning visitors increases from approximately 12% to 14%.
 
-The widening gap between the two curves is consistent
-with the statistically significant interaction identified
-in the regression model. The confidence intervals also
-widen at longer browsing durations, particularly for new
-visitors, indicating greater uncertainty in the estimated
-probabilities.
+The widening gap between the two curves is consistent with the statistically significant interaction identified in the regression model. The confidence intervals also widen at longer browsing durations, particularly for new visitors, indicating greater uncertainty in the estimated probabilities.
 
-From a business perspective, these findings suggest that
-product browsing duration may be a more informative
-indicator of purchase intent among new visitors than
-returning visitors.
+From a business perspective, these findings suggest that product browsing duration may be a more informative indicator of purchase intent among new visitors than returning visitors.
 
-However, these predictions are conditional on the selected
-control variable values and do not represent average
-purchase probabilities across all visitors. Given the
-strong correlation between product page count and browsing
-duration, predictions at longer durations should be
-interpreted with caution until the observed data support
-for these combinations has been assessed. Additionally,
-the observed associations should not be interpreted as
-causal relationships.
+However, these predictions are conditional on the selected control variable values and do not represent average purchase probabilities across all visitors. Given the strong correlation between product page count and browsing duration, predictions at longer durations should be interpreted with caution until the observed data support for these combinations has been assessed. Additionally, the observed associations should not be interpreted as causal relationships.
 
+# C. Model Diagnostics & Assessment
