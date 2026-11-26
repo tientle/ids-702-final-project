@@ -1215,7 +1215,7 @@ $$\log\left(\frac{p_i}{1-p_i}\right)
 Where:
 
 | Symbol | Description |
-|-----------------------|------------------------------------------------|
+|----|----|
 | $Y_i$ | Purchase outcome (1 = purchase, 0 = no purchase) |
 | $p_i$ | Probability of purchase for session $i$ |
 | $D_i$ | Product browsing duration (minutes) |
@@ -1260,15 +1260,9 @@ summary(model1)
 
 ### 3.1. Coefficient Estimates
 
-All four predictors were statistically significant at the
-0.05 significance level. Since logistic regression coefficients
-are estimated on the log-odds scale, we exponentiate the
-coefficients to obtain odds ratios for more intuitive
-interpretation.
+All four predictors were statistically significant at the 0.05 significance level. Since logistic regression coefficients are estimated on the log-odds scale, we exponentiate the coefficients to obtain odds ratios for more intuitive interpretation.
 
-$$
-OR_j = e^{\hat{\beta}_j}
-$$
+$$OR_j = e^{\hat{\beta}_j}$$
 
 ```{r}
 library(broom)
@@ -1288,60 +1282,50 @@ model1_results
 
 Holding all other predictors constant:
 
-- **Product browsing duration:** Each additional minute
-  spent browsing product-related pages is associated with
-  a 0.55% increase in the odds of purchasing
-  ($OR = 1.0055$, $p < 0.001$).
+- **Product browsing duration:** Each additional minute spent browsing product-related pages is associated with a 0.55% increase in the odds of purchasing ($OR = 1.0055$, $p < 0.001$).
 
-- **Visitor type:** Returning visitors have approximately
-  59.4% lower odds of purchasing compared to new visitors
-  ($OR = 0.4059$, $p < 0.001$).
+- **Visitor type:** Returning visitors have approximately 59.4% lower odds of purchasing compared to new visitors ($OR = 0.4059$, $p < 0.001$).
 
-- **Product page count:** Each additional product-related
-  page visited is associated with a 0.53% increase in
-  the odds of purchasing
-  ($OR = 1.0053$, $p < 0.001$).
+- **Product page count:** Each additional product-related page visited is associated with a 0.53% increase in the odds of purchasing ($OR = 1.0053$, $p < 0.001$).
 
-- **Weekend status:** Visitors browsing on weekends have
-  approximately 15.9% higher odds of purchasing compared
-  to visitors browsing on weekdays
-  ($OR = 1.1594$, $p = 0.0116$).
+- **Weekend status:** Visitors browsing on weekends have approximately 15.9% higher odds of purchasing compared to visitors browsing on weekdays ($OR = 1.1594$, $p = 0.0116$).
 
-These results suggest that both the duration and volume
-of product browsing are positively associated with the
-odds of purchasing. Returning visitors have substantially
-lower estimated odds of purchasing than new visitors,
-even after accounting for browsing duration, product
-page count, and weekend status.
+These results suggest that both the duration and volume of product browsing are positively associated with the odds of purchasing. Returning visitors have substantially lower estimated odds of purchasing than new visitors, even after accounting for browsing duration, product page count, and weekend status.
 
 ### 3.3. Preliminary Model Assessment
 
-The main effects model was fitted using 12,245 browsing
-sessions and successfully converged after four iterations.
+The main effects model was fitted using 12,245 browsing sessions and successfully converged after four iterations.
 
-| Metric | Value |
-|---|---:|
-| Sample size | 12,245 |
-| Null deviance | 10,542 |
+| Metric            |  Value |
+|-------------------|-------:|
+| Sample size       | 12,245 |
+| Null deviance     | 10,542 |
 | Residual deviance | 10,101 |
-| AIC | 10,111 |
+| AIC               | 10,111 |
 
-The reduction from the null deviance to the residual
-deviance indicates that the inclusion of the predictors
-improves model fit relative to an intercept-only model.
+The reduction from the null deviance to the residual deviance indicates that the inclusion of the predictors improves model fit relative to an intercept-only model.
 
-However, the main effects model assumes that the association
-between product browsing duration and the log odds of
-purchasing is the same for new and returning visitors.
-To directly address our research question, we will extend
-this model by introducing an interaction term between
-browsing duration and visitor type.
+However, the main effects model assumes that the association between product browsing duration and the log odds of purchasing is the same for new and returning visitors. To directly address our research question, we will extend this model by introducing an interaction term between browsing duration and visitor type.
 
-Further assessment of model assumptions and performance
-will be conducted in the model diagnostics section.
-
+Further assessment of model assumptions and performance will be conducted in the model diagnostics section.
 
 ## 4. Logistic Regression with Interaction
+
+### 4.1. Model Estimation
+
+To directly address our research question, we extend the main effects model by including an interaction term between product browsing duration and visitor type. This allows the association between browsing duration and the log odds of purchasing to differ between new and returning visitors, while controlling for product page count and weekend status.
+
+```{r}
+# Fit logistic regression model with interaction
+model2 <- glm(
+  Revenue ~ Duration_Minutes * VisitorType + ProductRelated + Weekend,
+  data = df_clean,
+  family = binomial(link = "logit")
+)
+
+# Display model summary
+summary(model2)
+```
 
 ## 5. Model Comparison
 
