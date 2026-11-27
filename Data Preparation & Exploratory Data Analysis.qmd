@@ -1,6 +1,7 @@
 ---
-title: "Data Preparation and EDA"
-author: "IDS 702 Team 5"
+title: "Browsing to Buying - Analyzing shoppers' online purchase conversions"
+subtitle: "Haoye Xu, Tien Le, Yiran Chen"
+author: "IDS 702 | Team 5 "
 format:
   pdf:
     number-sections: false
@@ -11,6 +12,10 @@ execute:
   warning: false
   message: false
 ---
+
+Does spending more time browsing products have a different association with purchase likelihood for new versus returning online shoppers, after accounting for other browsing behaviors and session characteristics?
+
+# A. Data Preparation and Exploratory Data Analysis
 
 ## 1 Data Import
 
@@ -1183,3 +1188,573 @@ Holst, C. (2025, February 2). *Reasons for cart abandonment – Why 70% of users
 Sakar, C. O., & Kastro, Y. (2018). *Online shoppers purchasing intention dataset* \[Data set\]. UCI Machine Learning Repository. <https://doi.org/10.24432/C5F88Q>
 
 Sakar, C. O., Polat, S. O., Katircioglu, M., & Kastro, Y. (2019). Real-time prediction of online shoppers’ purchasing intention using multilayer perceptron and LSTM recurrent neural networks. *Neural Computing and Applications, 31*, 6893–6908. <https://doi.org/10.1007/s00521-018-3523-0>
+
+# B. Statistical Modeling & Inference
+
+## 1. Model Formulation
+
+Multiple logistic regression was selected because the outcome of interest is binary: a shopper either makes a purchase or does not. This model allows us to examine the association between product browsing duration and purchase likelihood while controlling for other browsing behaviors and session characteristics.
+
+We will fit two models: a main effects model and an interaction model. The interaction model allows us to assess whether the association between product browsing duration and purchase likelihood differs between new and returning visitors.
+
+### Model 1: Main Effects Model
+
+$$Y_i \sim \text{Bernoulli}(p_i)$$
+
+$$\log\left(\frac{p_i}{1-p_i}\right)
+= \beta_0 + \beta_1D_i + \beta_2V_i
++ \beta_3P_i + \beta_4W_i$$
+
+### Model 2: Interaction Model
+
+$$\log\left(\frac{p_i}{1-p_i}\right)
+= \beta_0 + \beta_1D_i + \beta_2V_i
++ \beta_3P_i + \beta_4W_i
++ \beta_5(D_i \times V_i)$$
+
+Where:
+
+| Symbol | Description |
+|--------------------------|----------------------------------------------|
+| $Y_i$ | Purchase outcome (1 = purchase, 0 = no purchase) |
+| $p_i$ | Probability of purchase for session $i$ |
+| $D_i$ | Product browsing duration (minutes) |
+| $V_i$ | Visitor type (0 = new, 1 = returning) |
+| $P_i$ | Number of product-related pages visited |
+| $W_i$ | Weekend status (0 = weekday, 1 = weekend) |
+| $D_i \times V_i$ | Interaction between browsing duration and visitor type |
+| $\beta_0$ | Intercept |
+| $\beta_1, \ldots, \beta_5$ | Regression coefficients |
+
+## 2. Covariate Selection
+
+Covariates were selected based on the research question, subject-matter relevance, and exploratory data analysis.
+
+Product browsing duration and visitor type (new or returning) were selected as the primary independent variables. An interaction term between these variables will be included to assess whether the association between browsing duration and purchase likelihood differs by visitor type.
+
+The following variables were selected as initial controls:
+
+- **Number of product-related pages visited:** Accounts for the volume of product browsing, allowing us to examine the association between browsing duration and purchase likelihood while holding page count constant.
+
+- **Weekend status:** Accounts for potential differences in shopping behavior between weekdays and weekends.
+
+Exploratory data analysis revealed a strong correlation between product page count and browsing duration ($r = 0.861$). Both variables will initially be retained because of their relevance to the research question. Potential multicollinearity will be further assessed using variance inflation factors (VIF).
+
+Additional browsing behaviors and session characteristics will be considered as potential covariates during model assessment. Page value will be excluded due to its potential to incorporate information related to the purchase outcome.
+
+## 3. Multiple Logistic Regression
+
+We first fit a multiple logistic regression model without an interaction term to establish a baseline for comparison. This model estimates the association between product browsing duration and purchase likelihood while accounting for visitor type, product page count, and weekend status.
+
+```{r}
+# Fit main effects logistic regression model
+model1 <- glm(
+  Revenue ~ Duration_Minutes + VisitorType + ProductRelated + Weekend,
+  data = df_clean,
+  family = binomial(link = "logit")
+)
+
+# Display model summary
+summary(model1)
+```
+
+### 3.1. Coefficient Estimates
+
+All four predictors were statistically significant at the 0.05 significance level. Since logistic regression coefficients are estimated on the log-odds scale, we exponentiate the coefficients to obtain odds ratios for more intuitive interpretation.
+
+$$OR_j = e^{\hat{\beta}_j}$$
+
+```{r}
+library(broom)
+
+# Calculate odds ratios and 95% confidence intervals
+model1_results <- tidy(
+  model1,
+  conf.int = TRUE,
+  conf.level = 0.95,
+  exponentiate = TRUE
+)
+
+model1_results
+```
+
+### 3.2. Interpretation of Results
+
+Holding all other predictors constant:
+
+- **Product browsing duration:** Each additional minute spent browsing product-related pages is associated with a 0.55% increase in the odds of purchasing ($OR = 1.0055$, $p < 0.001$).
+
+- **Visitor type:** Returning visitors have approximately 59.4% lower odds of purchasing compared to new visitors ($OR = 0.4059$, $p < 0.001$).
+
+- **Product page count:** Each additional product-related page visited is associated with a 0.53% increase in the odds of purchasing ($OR = 1.0053$, $p < 0.001$).
+
+- **Weekend status:** Visitors browsing on weekends have approximately 15.9% higher odds of purchasing compared to visitors browsing on weekdays ($OR = 1.1594$, $p = 0.0116$).
+
+These results suggest that both the duration and volume of product browsing are positively associated with the odds of purchasing. Returning visitors have substantially lower estimated odds of purchasing than new visitors, even after accounting for browsing duration, product page count, and weekend status.
+
+### 3.3. Preliminary Model Assessment
+
+The main effects model was fitted using 12,245 browsing sessions and successfully converged after four iterations.
+
+| Metric            |  Value |
+|-------------------|-------:|
+| Sample size       | 12,245 |
+| Null deviance     | 10,542 |
+| Residual deviance | 10,101 |
+| AIC               | 10,111 |
+
+The reduction from the null deviance to the residual deviance indicates that the inclusion of the predictors improves model fit relative to an intercept-only model.
+
+However, the main effects model assumes that the association between product browsing duration and the log odds of purchasing is the same for new and returning visitors. To directly address our research question, we will extend this model by introducing an interaction term between browsing duration and visitor type.
+
+Further assessment of model assumptions and performance will be conducted in the model diagnostics section.
+
+## 4. Logistic Regression with Interaction
+
+### 4.1. Model Estimation
+
+To directly address our research question, we extend the main effects model by including an interaction term between product browsing duration and visitor type. This allows the association between browsing duration and the log odds of purchasing to differ between new and returning visitors, while controlling for product page count and weekend status.
+
+```{r}
+# Fit logistic regression model with interaction
+model2 <- glm(
+  Revenue ~ Duration_Minutes * VisitorType + ProductRelated + Weekend,
+  data = df_clean,
+  family = binomial(link = "logit")
+)
+
+# Display model summary
+summary(model2)
+```
+
+### 4.2. Coefficient Estimates
+
+All predictors, including the interaction term between product browsing duration and visitor type, were statistically significant at the 0.05 significance level.
+
+```{r}
+# Calculate odds ratios and 95% confidence intervals
+model2_results <- tidy(
+  model2,
+  conf.int = TRUE,
+  conf.level = 0.95,
+  exponentiate = TRUE
+)
+
+model2_results
+```
+
+### 4.3. Interpretation of Interaction Effect
+
+The interaction between product browsing duration and returning visitor status was negative and statistically significant ($\hat{\beta}_5 = -0.020527$, $p < 0.001$). This provides evidence that the association between product browsing duration and the log odds of purchasing differs between new and returning visitors.
+
+For new visitors, the estimated change in log odds for each additional minute of product browsing is:
+
+$$\hat{\beta}_1 = 0.025137$$
+
+For returning visitors, the estimated change in log odds for each additional minute of product browsing is:
+
+$$\hat{\beta}_1 + \hat{\beta}_5
+= 0.025137 - 0.020527
+= 0.004610$$
+
+```{r}
+# Extract duration and interaction coefficients
+beta_duration <- coef(model2)["Duration_Minutes"]
+
+beta_interaction <- coef(model2)[
+  "Duration_Minutes:VisitorTypeReturning_Visitor"
+]
+
+# Calculate visitor-specific odds ratios
+or_new <- exp(beta_duration)
+or_returning <- exp(beta_duration + beta_interaction)
+
+# Summarize visitor-specific effects
+visitor_effects <- tibble(
+  `Visitor Type` = c("New Visitor", "Returning Visitor"),
+  `Log-Odds Coefficient` = c(
+    beta_duration,
+    beta_duration + beta_interaction
+  ),
+  `Odds Ratio` = c(or_new, or_returning),
+  `Percent Change in Odds` = c(
+    (or_new - 1) * 100,
+    (or_returning - 1) * 100
+  )
+)
+
+knitr::kable(
+  visitor_effects,
+  digits = 4,
+  caption = "Estimated association between browsing duration
+  and purchase odds by visitor type."
+)
+```
+
+Holding product page count and weekend status constant:
+
+- **New visitors:** Each additional minute spent browsing product-related pages is associated with approximately 2.55% higher odds of purchasing.
+
+- **Returning visitors:** Each additional minute spent browsing product-related pages is associated with approximately 0.46% higher odds of purchasing.
+
+- **Interaction effect:** The negative interaction coefficient indicates that the positive association between browsing duration and purchase odds is weaker for returning visitors than for new visitors.
+
+These findings suggest that visitor type moderates the relationship between product browsing duration and purchase odds. However, these results describe statistical associations rather than causal relationships.
+
+### 4.4. Preliminary Model Assessment
+
+The interaction model was fitted using 12,245 browsing sessions and successfully converged after four iterations.
+
+| Metric            |  Value |
+|-------------------|-------:|
+| Sample size       | 12,245 |
+| Null deviance     | 10,542 |
+| Residual deviance | 10,080 |
+| AIC               | 10,092 |
+
+Compared with the main effects model, the interaction model has a lower residual deviance and AIC, providing preliminary evidence of improved model fit.
+
+A formal likelihood ratio test will be conducted to determine whether including the interaction term significantly improves model fit.
+
+## 5. Model Comparison
+
+The main effects model and interaction model were compared using a likelihood ratio test and Akaike Information Criterion (AIC) to determine whether including the interaction term improves model fit.
+
+### 5.1. Likelihood Ratio Test
+
+Because the main effects model is nested within the interaction model, a likelihood ratio test can be used to assess whether the additional interaction term significantly improves model fit.
+
+The hypotheses are:
+
+$$H_0: \beta_5 = 0$$
+
+$$H_A: \beta_5 \neq 0$$
+
+Under the null hypothesis, the association between product browsing duration and the log odds of purchasing does not differ between new and returning visitors.
+
+The test statistic is calculated as:
+
+$$\Lambda = 2[\ell(M_2) - \ell(M_1)]$$
+
+where $\ell(M_1)$ and $\ell(M_2)$ represent the log-likelihoods of the main effects and interaction models, respectively. Under the null hypothesis, the test statistic approximately follows a chi-square distribution with one degree of freedom.
+
+```{r}
+# Compare nested models using a likelihood ratio test
+anova(model1, model2, test = "Chisq")
+```
+
+### 5.2. AIC Comparison
+
+Akaike Information Criterion (AIC) was used to compare the two models while accounting for differences in model complexity. A lower AIC indicates a more favorable balance between model fit and complexity.
+
+```{r}
+# Compare model fit statistics
+model_comparison <- tibble(
+  Model = c("Main Effects Model", "Interaction Model"),
+  Parameters = c(
+    length(coef(model1)),
+    length(coef(model2))
+  ),
+  `Residual Deviance` = c(
+    deviance(model1),
+    deviance(model2)
+  ),
+  AIC = c(AIC(model1), AIC(model2))
+)
+
+knitr::kable(
+  model_comparison,
+  digits = 2,
+  caption = "Comparison of logistic regression models."
+)
+```
+
+The interaction model has a lower AIC than the main effects model, suggesting that the improvement in model fit outweighs the penalty for including an additional parameter.
+
+### 5.3. Model Selection
+
+The likelihood ratio test indicated that the interaction model provided a statistically significant improvement in fit compared to the main effects model ($\chi^2(1) = 20.688$, $p < 0.001$). Therefore, we reject the null hypothesis that the interaction coefficient is equal to zero.
+
+The interaction model also had a lower AIC (10,092.25) than the main effects model (10,110.94), representing a reduction of 18.69. This suggests that the improvement in model fit outweighs the penalty for including an additional parameter.
+
+Based on both the likelihood ratio test and AIC comparison, the interaction model was selected as the preferred model for subsequent statistical inference and interpretation.
+
+These results provide evidence that the association between product browsing duration and the log odds of purchasing differs between new and returning visitors, after accounting for product page count and weekend status.
+
+The selected model will undergo further diagnostic assessment to evaluate model assumptions and performance.
+
+## 6. Statistical Inference and Interpretation
+
+### 6.1. Regression Results
+
+Regression coefficients were exponentiated to obtain odds ratios, allowing for more intuitive interpretation of the association between each predictor and purchase odds. Standard errors on the odds-ratio scale were approximated using the delta method. We report 95% confidence intervals and p-values to assess statistical uncertainty.
+
+```{r}
+# Function to format logistic regression results
+format_results <- function(model) {
+  broom::tidy(
+    model,
+    conf.int = TRUE,
+    conf.level = 0.95,
+    exponentiate = TRUE
+  ) %>%
+    mutate(
+      std.error = estimate * std.error,
+      term = recode(
+        term,
+        "(Intercept)" = "Intercept",
+        "Duration_Minutes" = "Product browsing duration (min)",
+        "VisitorTypeReturning_Visitor" = "Returning visitor",
+        "ProductRelated" = "Product page count",
+        "WeekendTRUE" = "Weekend",
+        "Duration_Minutes:VisitorTypeReturning_Visitor" =
+          "Browsing duration × Returning visitor"
+      )
+    ) %>%
+    transmute(
+      Predictor = term,
+      `Odds Ratio` = round(estimate, 4),
+      `Standard Error` = round(std.error, 4),
+      `95% CI Lower` = round(conf.low, 4),
+      `95% CI Upper` = round(conf.high, 4),
+      `P-value` = ifelse(
+        p.value < 0.001,
+        "<0.001",
+        sprintf("%.4f", p.value)
+      )
+    )
+}
+
+# Generate formatted results for both models
+model1_table <- format_results(model1)
+model2_table <- format_results(model2)
+
+knitr::kable(
+  model1_table,
+  caption = "Model 1: Main effects logistic regression."
+)
+
+knitr::kable(
+  model2_table,
+  caption = "Model 2: Logistic regression with interaction."
+)
+```
+
+### 6.2. Visitor-Specific Effects
+
+To further investigate the interaction between product browsing duration and visitor type, we estimated visitor-specific odds ratios, 95% confidence intervals, and p-values.
+
+For new visitors, the duration coefficient is $\hat{\beta}_1$. For returning visitors, the duration coefficient is $\hat{\beta}_1 + \hat{\beta}_5$.
+
+The standard error of the combined coefficient accounts for both the variances and covariance of the estimated coefficients.
+
+```{r}
+# Extract coefficients and variance-covariance matrix
+b <- coef(model2)
+V <- vcov(model2)
+
+duration_term <- "Duration_Minutes"
+interaction_term <- "Duration_Minutes:VisitorTypeReturning_Visitor"
+
+# New visitors
+beta_new <- b[duration_term]
+se_new <- sqrt(V[duration_term, duration_term])
+
+# Returning visitors
+beta_returning <- b[duration_term] + b[interaction_term]
+
+se_returning <- sqrt(
+  V[duration_term, duration_term] +
+  V[interaction_term, interaction_term] +
+  2 * V[duration_term, interaction_term]
+)
+
+# Calculate visitor-specific inference statistics
+visitor_inference <- tibble(
+  Visitor = c("New Visitor", "Returning Visitor"),
+  beta = c(beta_new, beta_returning),
+  se = c(se_new, se_returning)
+) %>%
+  mutate(
+    odds_ratio = exp(beta),
+    ci_lower = exp(beta - qnorm(0.975) * se),
+    ci_upper = exp(beta + qnorm(0.975) * se),
+    p_value = 2 * pnorm(-abs(beta / se)),
+    percent_change = (odds_ratio - 1) * 100
+  )
+
+# Format results
+visitor_inference_table <- visitor_inference %>%
+  transmute(
+    `Visitor Type` = Visitor,
+    `Odds Ratio` = round(odds_ratio, 4),
+    `95% CI Lower` = round(ci_lower, 4),
+    `95% CI Upper` = round(ci_upper, 4),
+    `Change in Odds (%)` = round(percent_change, 2),
+    `P-value` = ifelse(
+      p_value < 0.001,
+      "<0.001",
+      sprintf("%.4f", p_value)
+    )
+  )
+
+knitr::kable(
+  visitor_inference_table,
+  caption = "Visitor-specific associations between product
+  browsing duration and purchase odds."
+)
+```
+
+### 6.3. Summary of Findings
+
+Product browsing duration was positively and statistically significantly associated with purchase odds for both new and returning visitors, after accounting for product page count and weekend status.
+
+For new visitors, each additional minute spent browsing product-related pages was associated with a 2.55% increase in the odds of purchasing (OR = 1.0255, 95% CI: 1.0161–1.0349, p \< 0.001).
+
+For returning visitors, each additional minute was associated with a 0.46% increase in the odds of purchasing (OR = 1.0046, 95% CI: 1.0016–1.0077, p = 0.0029).
+
+The statistically significant negative interaction coefficient indicates that the positive association between product browsing duration and purchase odds is stronger for new visitors than for returning visitors.
+
+These findings suggest that product browsing duration may be a more informative indicator of purchase intent among new visitors. However, the observational nature of the data prevents us from establishing a causal relationship between browsing duration and purchasing behavior.
+
+These conclusions remain subject to further assessment of model assumptions and adequacy.
+
+## 7. Predicted Purchase Probabilities
+
+### 7.1. Generate Predicted Probabilities
+
+To visualize the interaction between product browsing duration and visitor type, predicted purchase probabilities were calculated using the selected interaction model.
+
+Product page count was held constant at its median value of 18 pages. The median was selected because the distribution of product page count is right-skewed, making it less sensitive to extreme observations than the mean. Weekend status was held constant at weekday.
+
+Holding these variables constant allows us to isolate the modeled association between browsing duration and purchase probability across visitor types. Browsing duration was varied from zero to its 95th percentile to focus on the range containing most observed sessions.
+
+```{r}
+# Define range of browsing duration
+duration_range <- seq(
+  from = 0,
+  to = quantile(df_clean$Duration_Minutes, 0.95),
+  length.out = 200
+)
+
+# Create prediction dataset
+prediction_data <- expand.grid(
+  Duration_Minutes = duration_range,
+  VisitorType = levels(df_clean$VisitorType),
+  ProductRelated = median(df_clean$ProductRelated),
+  Weekend = "FALSE"
+)
+
+# Match factor levels to original dataset
+prediction_data$VisitorType <- factor(
+  prediction_data$VisitorType,
+  levels = levels(df_clean$VisitorType)
+)
+
+prediction_data$Weekend <- factor(
+  prediction_data$Weekend,
+  levels = levels(df_clean$Weekend)
+)
+
+# Generate predictions on the log-odds scale
+predictions <- predict(
+  model2,
+  newdata = prediction_data,
+  type = "link",
+  se.fit = TRUE
+)
+
+# Convert log odds to probabilities
+prediction_data <- prediction_data %>%
+  mutate(
+    probability = plogis(predictions$fit),
+    ci_lower = plogis(
+      predictions$fit - qnorm(0.975) * predictions$se.fit
+    ),
+    ci_upper = plogis(
+      predictions$fit + qnorm(0.975) * predictions$se.fit
+    ),
+    Visitor = recode(
+      VisitorType,
+      "New_Visitor" = "New Visitor",
+      "Returning_Visitor" = "Returning Visitor"
+    )
+  )
+```
+
+### 7.2. Visualize Predicted Purchase Probabilities
+
+Predicted purchase probabilities were plotted against product browsing duration for each visitor type. Shaded regions represent pointwise 95% confidence intervals for the estimated probabilities.
+
+```{r}
+#| fig-width: 8
+#| fig-height: 5
+
+ggplot(
+  prediction_data,
+  aes(
+    x = Duration_Minutes,
+    y = probability,
+    color = Visitor,
+    fill = Visitor
+  )
+) +
+  geom_ribbon(
+    aes(ymin = ci_lower, ymax = ci_upper),
+    alpha = 0.15,
+    color = NA
+  ) +
+  geom_line(linewidth = 1.2) +
+  scale_color_manual(
+    values = c(
+      "New Visitor" = "#2563EB",
+      "Returning Visitor" = "#D97706"
+    )
+  ) +
+  scale_fill_manual(
+    values = c(
+      "New Visitor" = "#2563EB",
+      "Returning Visitor" = "#D97706"
+    )
+  ) +
+  scale_y_continuous(
+    labels = scales::label_percent()
+  ) +
+  labs(
+    title = "Predicted Purchase Probability by Visitor Type",
+    subtitle = paste0(
+      "Weekday sessions with ",
+      median(df_clean$ProductRelated),
+      " product pages visited"
+    ),
+    x = "Product Browsing Duration (Minutes)",
+    y = "Predicted Purchase Probability",
+    color = NULL,
+    fill = NULL,
+    caption = "Shaded regions represent pointwise 95% confidence intervals."
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+
+
+```
+
+### 7.3. Interpretation of Predicted Probabilities
+
+The predicted probability curves illustrate the interaction between product browsing duration and visitor type. While predicted purchase probability increases with browsing duration for both visitor groups, the increase is substantially greater for new visitors.
+
+To ensure a consistent comparison between visitor types, product page count was held constant at its median value of 18 pages, and weekend status was held constant at weekday.
+
+Under these conditions, as product browsing duration increases from 20 to 60 minutes, the predicted purchase probability for new visitors increases from approximately 28% to 52%. In comparison, the predicted purchase probability for returning visitors increases from approximately 12% to 14%.
+
+The widening gap between the two curves is consistent with the statistically significant interaction identified in the regression model. The confidence intervals also widen at longer browsing durations, particularly for new visitors, indicating greater uncertainty in the estimated probabilities.
+
+From a business perspective, these findings suggest that product browsing duration may be a more informative indicator of purchase intent among new visitors than returning visitors.
+
+However, these predictions are conditional on the selected control variable values and do not represent average purchase probabilities across all visitors. Given the strong correlation between product page count and browsing duration, predictions at longer durations should be interpreted with caution until the observed data support for these combinations has been assessed. Additionally, the observed associations should not be interpreted as causal relationships.
+
+# C. Model Diagnostics & Assessment
