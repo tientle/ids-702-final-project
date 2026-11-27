@@ -1,0 +1,4 @@
+"Model","AIC","HL_p","Duration_form","Assessment"
+"M2",10092.2491972422,0,"Minutes","Inspect partial residual plots; no flexible-curve models fitted"
+"M3",9198.11534576233,0.171207435801398,"Minutes","Inspect partial residual plots; no flexible-curve models fitted"
+"M4",9117.20445828549,0.162257018872702,"Log(1 + minutes)","Inspect partial residual plots; no flexible-curve models fitted"

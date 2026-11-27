@@ -1,0 +1,12 @@
+.DS_Store
+.quarto/
+*_files/
+*.tex
+*.log
+*.aux
+*.out
+*.toc
+*.knit.md
+*.rmarkdown
+outputs/diagnostics/model_assessment.rds
+outputs/diagnostics/session-info.txt

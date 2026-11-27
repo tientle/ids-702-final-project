@@ -16,7 +16,7 @@ This project investigates browsing behavior and purchase conversion among new an
 |---|---|---|
 | A. Data Preparation & Exploratory Data Analysis | Person 1 | Complete |
 | B. Statistical Modeling & Inference | Person 2 | Complete |
-| C. Model Diagnostics & Assessment | Person 3 | Pending |
+| C. Model Diagnostics & Assessment | Yiran Chen | Complete; model revisions await team review |
 
 ## Data
 
@@ -59,10 +59,12 @@ Requirements: R, RStudio (recommended), Quarto, and a LaTeX distribution such as
    install.packages(c(
      "tidyverse",
      "knitr",
-     "moments",
      "corrplot",
      "broom",
-     "scales"
+     "scales",
+     "car",
+     "pROC",
+     "ResourceSelection"
    ))
    ```
 
@@ -116,6 +118,8 @@ The modeling team should use `Revenue` as the binary outcome, `VisitorType` as t
 This contribution covers data preparation and EDA; model fitting, inference, diagnostics, and the integrated final report are separate team responsibilities.
 
 # B. Statistical Modeling & Inference
+
+**Initial models.** These results describe the original specifications. Section C evaluates their assumptions, expands adjustment and compares a log-duration alternative; the full report synthesizes the revised findings.
 
 **Person 2**
 
@@ -348,6 +352,40 @@ After completing diagnostics, the team should review the final model together be
 
 # C. Model Diagnostics & Assessment
 
-**Person 3**
+**Yiran Chen | Person 3**
 
-*Pending completion.*
+The assessment uses four ordinary logistic regression models:
+
+| Model | Specification |
+|---|---|
+| M1 | Original main effects: duration, visitor type, product page count and weekend |
+| M2 | Original model with duration-by-visitor interaction |
+| M3 | M2 plus administrative/informational page counts, exit rate, month and traffic category |
+| M4 | M3 with log(1 + duration in minutes), including its visitor interaction |
+
+The revised scope retains correlation/VIF, partial residuals, convergence and numerical separation screening, deviance residuals, Cook's distance, simple deletion/deduplication checks, AIC/deviance, McFadden pseudo-R2, Hosmer-Lemeshow, and a brief in-sample ROC/classification assessment. No spline models are used.
+
+## Full report versus individual contribution
+
+- **Full integrated report:** `final-report.qmd` and `final-report.pdf` combine the team's data preparation, descriptive findings, initial modeling and revised assessment. They contain the stakeholder memo, technical appendix and supplementary coefficient tables.
+- **Person 3 contribution:** Section C of `Data Preparation & Exploratory Data Analysis.qmd` contains the detailed diagnostic code, visualizations and interpretations. The original A/B contributions are preserved.
+- **Diagnostic tables and figures:** `outputs/diagnostics/`, with 16 CSVs and 7 PNGs. `proposed_model_coefficients.csv` and `vif_proposed.csv` now refer to M4. `functional_tests.csv` is a functional-form comparison summary, not an additional nonlinear-model test.
+- **Review notes:** `PERSON3_HANDOFF.md` documents the scope and remaining team review.
+
+The standalone report contains all required R code in one file and runs independently from the repository's raw CSV. Render from the repository root:
+
+```sh
+quarto render final-report.qmd --to pdf
+```
+
+Install the packages listed above. The model-object RDS and session-info file are regenerated, but are excluded from version control. The workbook uses an explicit complete-data skewness function and does not require `moments`.
+
+## Interpretation
+
+The original and expanded raw-duration models support an interaction, while the expanded log-duration model has an interaction LR p-value of about 0.120. M4 has the lowest AIC among the four specifications, but remaining curvature is acknowledged. The findings do not establish a consistently stronger duration association for new visitors across these specifications.
+
+In M4, moving from 10 to 20 minutes is associated with an odds ratio of about 1.36 (95% CI 1.24-1.48) for new visitors and 1.26 (1.19-1.33) for returning visitors. Those positive associations do not establish a statistically significant difference between groups. The finite comparisons change little after influential-case or duplicate-record removal.
+
+Visitor familiarity is discussed as a plausible explanation for the initial pattern, not an observed mechanism. Returning visitors browsed longer on average in this sample; the report distinguishes average browsing time from the meaning of additional time within each group. Predictions use a stated conditional profile over 5-25 minutes, avoiding the poorly supported 60-minute new-visitor illustration at approximately 18 pages.
+
+All results are associations. All team members should review the final adjustment set, model interpretation and report before submission. PR #2 remains separate; the Person 3 draft PR targets `statistical-modeling`.
