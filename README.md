@@ -16,7 +16,7 @@ This project investigates browsing behavior and purchase conversion among new an
 |---|---|---|
 | A. Data Preparation & Exploratory Data Analysis | Person 1 | Complete |
 | B. Statistical Modeling & Inference | Person 2 | Complete |
-| C. Model Diagnostics & Assessment | Person 3 | Pending |
+| C. Model Diagnostics & Assessment | Yiran Chen | Complete; model revisions await team review |
 
 ## Data
 
@@ -59,10 +59,12 @@ Requirements: R, RStudio (recommended), Quarto, and a LaTeX distribution such as
    install.packages(c(
      "tidyverse",
      "knitr",
-     "moments",
      "corrplot",
      "broom",
-     "scales"
+     "scales",
+     "car",
+     "pROC",
+     "ResourceSelection"
    ))
    ```
 
@@ -348,6 +350,34 @@ After completing diagnostics, the team should review the final model together be
 
 # C. Model Diagnostics & Assessment
 
-**Person 3**
+**Yiran Chen | Person 3**
 
-*Pending completion.*
+Completed the diagnostic assessment and written report contributions. See [PERSON3_HANDOFF.md](PERSON3_HANDOFF.md) for the requirement mapping, professor-feedback response, results, and decisions awaiting team review.
+
+## Start here
+
+- **Submission draft:** [final-report.qmd](final-report.qmd) and [final-report.pdf](final-report.pdf). The QMD contains every computation needed for the report and renders independently from the raw repository CSV. The memo has 2 pages, the technical appendix has 5 pages, and full model tables are placed in a separate supplementary appendix under the project description's allowance.
+- **Detailed workbook:** Section C of the existing QMD, following the original A/B contributions.
+- **Tables and figures:** `outputs/diagnostics/`. Named CSVs cover model fit, interactions, functional form, VIF/GVIF, numerical checks, influence, finite contrasts, sensitivity analyses, prediction support and classification. PNGs cover partial residuals, residuals vs fitted, Cook's distance, conditional probabilities, calibration and ROC.
+
+Render the standalone report from the repository root:
+
+```bash
+quarto render final-report.qmd --to pdf
+```
+
+Additional packages are `car`, `pROC`, and `ResourceSelection`; see the installation list above. R's built-in `splines` is used for the proposed nonlinear model. The workbook no longer requires `moments`; its complete-data skewness definition is implemented explicitly.
+
+## Interpretation and model review
+
+The professor's feedback prioritizes inference, asks for more confounder adjustment, and asks why duration was logged. The assessment therefore starts with the original raw-duration models, assesses functional form, expands adjustment substantively, and keeps predictive metrics brief and explicitly in-sample.
+
+The initial interaction model has substantial curvature/calibration concerns. An expanded simple log-duration model has interaction LR p about 0.120; the proposed nonlinear model has a joint 3-df interaction p about 0.0000145. These test different hypotheses. The proposed nonlinear model suggests differences in curve shapes, rather than one universal additional per-minute effect for new visitors.
+
+The proposed model's AIC is about 9094.70, compared with 10092.25 for the original interaction model. Its 10-to-20-minute odds ratios are approximately 1.81 for new visitors and 1.29 for returning visitors, and are stable to influential-case and duplicate-record sensitivity checks. These are adjusted associations, not causal effects.
+
+The original 60-minute illustration at 18 product pages lacks support among new visitors. The revised conditional figure displays 5-25 minutes and states its covariate profile and support limitations.
+
+**Before submission, Person 2 and the team must review the expanded adjustment set, nonlinear specification, and revised interpretations.** The standalone PDF is explicitly labeled as a draft; no model revision has been represented as team-approved. All three members' review and Canvas submission remain outstanding.
+
+
