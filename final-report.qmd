@@ -18,7 +18,7 @@ format:
         \usepackage{fancyhdr}
         \pagestyle{fancy}
         \fancyhf{}
-        \fancyhead[L]{\small Team 5 | Assessment draft}
+        \fancyhead[L]{\small Team 5 | From Browsing to Buying}
         \fancyfoot[C]{\thepage}
         \setlength{\headheight}{14pt}
         \raggedbottom
@@ -35,180 +35,156 @@ editor: source
 
 library(tidyverse)
 library(knitr)
-df <- readr::read_csv("data/online_shoppers_intention.csv",show_col_types=FALSE)
-df$Duration_Minutes <- df$ProductRelated_Duration/60
+df <- readr::read_csv("data/online_shoppers_intention.csv", show_col_types=FALSE)
+df$Duration_Minutes <- df$ProductRelated_Duration / 60
 df$Log_Duration <- log1p(df$Duration_Minutes)
-df_clean <- df |> filter(VisitorType %in% c("New_Visitor","Returning_Visitor")) |>
+df_clean <- df |>
+  filter(VisitorType %in% c("New_Visitor", "Returning_Visitor")) |>
   mutate(Revenue=as.integer(Revenue),
-    VisitorType=factor(VisitorType,levels=c("New_Visitor","Returning_Visitor")),
+    VisitorType=factor(VisitorType, levels=c("New_Visitor","Returning_Visitor")),
     across(c(OperatingSystems,Browser,Region,TrafficType,Month),factor),
     Weekend=factor(Weekend,levels=c(FALSE,TRUE)))
-model1 <- glm(Revenue~Duration_Minutes+VisitorType+ProductRelated+Weekend,data=df_clean,family=binomial())
-model2 <- glm(Revenue~Duration_Minutes*VisitorType+ProductRelated+Weekend,data=df_clean,family=binomial())
+model1 <- glm(Revenue ~ Duration_Minutes + VisitorType + ProductRelated + Weekend,
+              data=df_clean, family=binomial())
+model2 <- glm(Revenue ~ Duration_Minutes * VisitorType + ProductRelated + Weekend,
+              data=df_clean, family=binomial())
 
 library(car)
 library(pROC)
 library(ResourceSelection)
-library(splines)
-dir.create("outputs/diagnostics", recursive = TRUE, showWarnings = FALSE)
-theme_set(theme_minimal(base_size = 10))
-visitor_labels <- c(New_Visitor = "New visitors", Returning_Visitor = "Returning visitors")
-fmt_p <- function(p) ifelse(p < .001, "<0.001", sprintf("%.3f", p))
+dir.create("outputs/diagnostics", recursive=TRUE, showWarnings=FALSE)
+theme_set(theme_minimal(base_size=10) + theme(panel.grid.minor=element_blank(),legend.position="bottom"))
+visitor_labels <- c(New_Visitor="New visitors", Returning_Visitor="Returning visitors")
+visitor_colors <- c(New_Visitor="#156082", Returning_Visitor="#BD582C")
+fmt_p <- function(x) ifelse(x < .001,"<0.001",sprintf("%.3f",x))
 
-# Broader adjustment is motivated by professor feedback, not univariate p-values.
-# Frequency-only pooling prevents very small traffic categories with zero purchases.
 d_assess <- df_clean
 traffic_n <- table(d_assess$TrafficType)
 d_assess$TrafficGroup <- factor(ifelse(traffic_n[as.character(d_assess$TrafficType)] < 100,
-                                      "Other", as.character(d_assess$TrafficType)))
-d_assess$Month <- relevel(d_assess$Month, ref = "May")
-stopifnot(nrow(d_assess) == 12245, all(d_assess$Revenue %in% 0:1), !anyNA(d_assess))
+                                      "Other",as.character(d_assess$TrafficType)))
+d_assess$Month <- relevel(d_assess$Month,"May")
+stopifnot(nrow(d_assess)==12245, all(d_assess$Revenue %in% 0:1), !anyNA(d_assess))
 f3 <- Revenue ~ Duration_Minutes * VisitorType + ProductRelated + Weekend +
   Administrative + Informational + ExitRates + Month + TrafficGroup
 f4 <- Revenue ~ Log_Duration * VisitorType + ProductRelated + Weekend +
   Administrative + Informational + ExitRates + Month + TrafficGroup
-f5 <- Revenue ~ splines::ns(Log_Duration, df = 3) * VisitorType + ProductRelated +
-  Weekend + Administrative + Informational + ExitRates + Month + TrafficGroup
-model3 <- glm(f3, data = d_assess, family = binomial())
-model4 <- glm(f4, data = d_assess, family = binomial())
-model5 <- glm(f5, data = d_assess, family = binomial())
-model3_nointer <- glm(update(f3, . ~ . - Duration_Minutes:VisitorType), data = d_assess, family = binomial())
-model4_nointer <- glm(update(f4, . ~ . - Log_Duration:VisitorType), data = d_assess, family = binomial())
-model5_nointer <- glm(Revenue ~ splines::ns(Log_Duration, df = 3) + VisitorType +
-  ProductRelated + Weekend + Administrative + Informational + ExitRates + Month + TrafficGroup,
-  data = d_assess, family = binomial())
-model5_noexit <- glm(update(f5, . ~ . - ExitRates), data = d_assess, family = binomial())
-model5_admin <- glm(update(f5, . ~ . - Administrative +
-  splines::ns(Administrative, knots = c(1,5))), data = d_assess, family = binomial())
-models_assess <- list(M1 = model1, M2 = model2, M3 = model3, M4 = model4, M5 = model5)
-null_assess <- glm(Revenue ~ 1, data = d_assess, family = binomial())
-fit_metrics <- bind_rows(lapply(names(models_assess), function(nm) {
-  m <- models_assess[[nm]]
-  hl <- ResourceSelection::hoslem.test(d_assess$Revenue, fitted(m), g = 10)
-  tibble(Model = nm, Parameters = length(coef(m)), Deviance = deviance(m), AIC = AIC(m),
-    McFadden = 1 - as.numeric(logLik(m)/logLik(null_assess)),
-    AUC = as.numeric(pROC::auc(pROC::roc(d_assess$Revenue, fitted(m), levels=c(0,1), direction="<", quiet=TRUE))),
-    HL_statistic = unname(hl$statistic), HL_df = unname(hl$parameter), HL_p = hl$p.value)
+model3 <- glm(f3,data=d_assess,family=binomial())
+model4 <- glm(f4,data=d_assess,family=binomial())
+model3_nointer <- glm(update(f3,.~.-Duration_Minutes:VisitorType),data=d_assess,family=binomial())
+model4_nointer <- glm(update(f4,.~.-Log_Duration:VisitorType),data=d_assess,family=binomial())
+models_assess <- list(M1=model1,M2=model2,M3=model3,M4=model4)
+null_assess <- glm(Revenue~1,data=d_assess,family=binomial())
+fit_metrics <- bind_rows(lapply(names(models_assess),function(nm) {
+  m<-models_assess[[nm]]
+  hl<-ResourceSelection::hoslem.test(d_assess$Revenue,fitted(m),g=10)
+  tibble(Model=nm,Parameters=length(coef(m)),Deviance=deviance(m),AIC=AIC(m),
+    McFadden=1-as.numeric(logLik(m)/logLik(null_assess)),
+    AUC=as.numeric(pROC::auc(pROC::roc(d_assess$Revenue,fitted(m),levels=c(0,1),direction="<",quiet=TRUE))),
+    HL_statistic=unname(hl$statistic),HL_p=hl$p.value)
 }))
-lrt_row <- function(label, reduced, full) {
-  a <- anova(reduced, full, test="Chisq")
-  tibble(Comparison=label, df=a$Df[2], LR=a$Deviance[2], p=a$`Pr(>Chi)`[2])
+lrt_row <- function(label,reduced,full) {
+  a<-anova(reduced,full,test="Chisq")
+  tibble(Comparison=label,df=a$Df[2],LR=a$Deviance[2],p=a$`Pr(>Chi)`[2])
 }
-interaction_tests <- bind_rows(lrt_row("M1 vs M2: raw-duration interaction",model1,model2),
-  lrt_row("M3: expanded raw-duration interaction",model3_nointer,model3),
-  lrt_row("M4: expanded log-duration interaction",model4_nointer,model4),
-  lrt_row("M5: joint nonlinear interaction",model5_nointer,model5))
-# All LR tests below compare nested models on the same observations. Raw vs log
-# specifications are NON-nested; compare their AIC, never an LR test between them.
-m2_duration_flex <- glm(Revenue ~ splines::ns(Duration_Minutes,3)*VisitorType +
-  ProductRelated + Weekend, data=d_assess, family=binomial())
-m2_pages_flex <- glm(Revenue ~ Duration_Minutes*VisitorType +
-  splines::ns(ProductRelated,3) + Weekend, data=d_assess, family=binomial())
-functional_tests <- bind_rows(lrt_row("M2: nonlinear duration by visitor",model2,m2_duration_flex),
-  lrt_row("M2: nonlinear product page count",model2,m2_pages_flex),
-  lrt_row("M4 vs M5: remaining duration curvature",model4,model5))
-for (v in c("ProductRelated","Administrative","Informational","ExitRates")) {
-  knots <- switch(v, ProductRelated="10,40", Administrative="1,5", Informational="1,2", ExitRates="0.01,0.05")
-  ff <- update(f5, paste(". ~ . -",v,"+ splines::ns(",v,", knots=c(",knots,"))"))
-  mm <- glm(ff,data=d_assess,family=binomial())
-  functional_tests <- bind_rows(functional_tests,lrt_row(paste("M5: curvature in",v),model5,mm))
-}
-
-# VIF for the main-effects model isolates predictor overlap; the interaction
-# model's term VIF also reflects how interaction columns are constructed.
-vif_main <- tibble(Predictor=names(car::vif(model1)), VIF=as.numeric(car::vif(model1)))
-vif_interaction <- tibble(Predictor=names(car::vif(model2)), VIF=as.numeric(car::vif(model2)))
-v5 <- car::vif(model5)
-vif_proposed <- tibble(Term=rownames(v5), GVIF=v5[,1], df=v5[,2], adjusted_GVIF=v5[,3])
-predictor_cor <- cor(d_assess[,c("Duration_Minutes","Log_Duration","ProductRelated","Administrative","Informational","ExitRates")])
-
-# Convergence / separation screen. This is a numerical screen, not an LP proof.
+interaction_tests <- bind_rows(lrt_row("Original raw-duration model",model1,model2),
+  lrt_row("Expanded raw-duration model",model3_nointer,model3),
+  lrt_row("Expanded log-duration model",model4_nointer,model4))
+# Raw and log-duration models are nonnested: compare AIC, not an LR test between them.
+functional_tests <- fit_metrics |> filter(Model %in% c("M2","M3","M4")) |>
+  select(Model,AIC,HL_p) |> mutate(Duration_form=c("Minutes","Minutes","Log(1 + minutes)"),
+    Assessment="Inspect partial residual plots; no flexible-curve models fitted")
+predictor_cor <- cor(d_assess[,c("Duration_Minutes","Log_Duration","ProductRelated",
+                                "Administrative","Informational","ExitRates")])
+vif_main <- tibble(Predictor=names(car::vif(model1)),VIF=as.numeric(car::vif(model1)))
+vif_interaction <- tibble(Predictor=names(car::vif(model2)),VIF=as.numeric(car::vif(model2)))
+v4<-car::vif(model4)
+vif_proposed <- tibble(Term=rownames(v4),GVIF=v4[,1],df=v4[,2],adjusted_GVIF=v4[,3])
 numerical_checks <- bind_rows(lapply(names(models_assess),function(nm) {
-  m <- models_assess[[nm]]
-  refit <- glm(formula(m),data=d_assess,family=binomial(),control=glm.control(maxit=100,epsilon=1e-10))
-  tibble(Model=nm,Converged=m$converged, Boundary=m$boundary,
-    Rank=m$rank, Columns=ncol(model.matrix(m)), Max_SE=max(sqrt(diag(vcov(m)))),
-    Extreme_probabilities=sum(fitted(m)<1e-8 | fitted(m)>1-1e-8),
-    Max_refit_change=max(abs(coef(refit)-coef(m))))
+  m<-models_assess[[nm]]
+  tibble(Model=nm,Converged=m$converged,Boundary=m$boundary,Rank=m$rank,
+    Columns=ncol(model.matrix(m)),Max_SE=max(sqrt(diag(vcov(m)))),
+    Extreme_probabilities=sum(fitted(m)<1e-8 | fitted(m)>1-1e-8))
 }))
 category_support <- bind_rows(lapply(c("VisitorType","Weekend","Month","TrafficGroup"),function(v) {
-  d_assess |> group_by(Level=.data[[v]]) |> summarise(No_purchase=sum(Revenue==0),Purchase=sum(Revenue==1),.groups="drop") |>
+  d_assess |> group_by(Level=.data[[v]]) |>
+    summarise(No_purchase=sum(Revenue==0),Purchase=sum(Revenue==1),.groups="drop") |>
     mutate(Variable=v,Level=as.character(Level))
 }))
 
-# Component-plus-working-residual plots, as in the course's HW6. The duration
-# component includes the interaction contribution for each visitor group.
-make_partial <- function(m, data, exposure, pages="ProductRelated") {
-  b <- coef(m); inter <- grep(paste0(exposure,":VisitorType|VisitorType.*:",exposure),names(b),value=TRUE)
-  slope <- b[exposure] + if(length(inter)) ifelse(data$VisitorType=="Returning_Visitor",b[inter],0) else 0
-  bind_rows(tibble(Visitor=data$VisitorType,Variable=ifelse(exposure=="Duration_Minutes","Duration (minutes)","Log(1 + duration in minutes)"),
-    X=data[[exposure]], Partial=residuals(m,type="working")+slope*data[[exposure]]),
-    tibble(Visitor=data$VisitorType,Variable="Product pages (count)",X=data[[pages]],
-      Partial=residuals(m,type="working")+b[pages]*data[[pages]]))
+# Working-residual + fitted-term components are assessed on the log-odds scale.
+partial_data <- function(m,xvar) {
+  b<-coef(m)
+  it<-grep(paste0(xvar,":VisitorType|VisitorType.*:",xvar),names(b),value=TRUE)
+  slope<-b[xvar]+ifelse(d_assess$VisitorType=="Returning_Visitor",b[it],0)
+  tibble(Visitor=d_assess$VisitorType,Time=d_assess[[xvar]],
+    Duration_partial=residuals(m,type="working")+slope*d_assess[[xvar]],
+    Page_count=d_assess$ProductRelated,
+    Pages_partial=residuals(m,type="working")+b["ProductRelated"]*d_assess$ProductRelated)
 }
-partial_initial <- make_partial(model2,d_assess,"Duration_Minutes")
-partial_log <- make_partial(model4,d_assess,"Log_Duration")
-partial_plot <- function(z,title) {
-  z |> group_by(Variable) |> filter(X <= quantile(X,.99)) |> ungroup() |>
-    ggplot(aes(X,Partial,color=Visitor)) + geom_point(alpha=.04,size=.5) +
-    geom_smooth(method="loess",formula=y~x,se=FALSE,linewidth=.7) +
-    geom_smooth(method="lm",formula=y~x,se=FALSE,linetype=2,linewidth=.5) +
-    facet_wrap(~Variable,scales="free_x") + coord_cartesian(ylim=c(-8,8)) +
-    scale_color_manual(values=c("#156082","#BD582C"),labels=visitor_labels) +
-    labs(title=title,x=NULL,y="Component + working residual",color=NULL,
-      caption="LOESS (solid) and linear guide (dashed); 99th-percentile x display, y clipped for readability. All sessions used in models.") +
-    theme(legend.position="bottom",plot.caption=element_text(size=7))
+make_partial_plot <- function(z,xlabel) {
+  z |> filter(Time<=quantile(Time,.99)) |>
+    ggplot(aes(Time,Duration_partial)) + geom_point(alpha=.05,size=.5,color="#777777") +
+    geom_smooth(method="loess",formula=y~x,se=FALSE,color="#156082",linewidth=.8) +
+    geom_smooth(method="lm",formula=y~x,se=FALSE,color="#333333",linetype=2,linewidth=.5) +
+    facet_wrap(~Visitor,labeller=as_labeller(visitor_labels)) + coord_cartesian(ylim=c(-5,8)) +
+    labs(x=xlabel,y="Partial working residual")
 }
-partial_initial_plot <- partial_plot(partial_initial,"Original interaction model: functional-form check")
-partial_log_plot <- partial_plot(partial_log,"Expanded log-duration model: remaining curvature")
+partial_initial <- partial_data(model2,"Duration_Minutes")
+partial_log <- partial_data(model4,"Log_Duration")
+partial_initial_plot <- make_partial_plot(partial_initial,"Product browsing duration (minutes)")
+partial_log_plot <- make_partial_plot(partial_log,"Log(1 + product browsing minutes)")
+pages_partial_plot <- partial_log |> filter(Page_count<=quantile(Page_count,.99)) |>
+  ggplot(aes(Page_count,Pages_partial)) + geom_point(alpha=.05,size=.5,color="#777777") +
+  geom_smooth(method="loess",formula=y~x,se=FALSE,color="#156082",linewidth=.8) +
+  geom_smooth(method="lm",formula=y~x,se=FALSE,color="#333333",linetype=2,linewidth=.5) +
+  facet_wrap(~Visitor,labeller=as_labeller(visitor_labels)) + coord_cartesian(ylim=c(-5,8)) +
+  labs(x="Product page count",y="Partial working residual")
 
-diagnostic_rows <- bind_rows(lapply(c("M2","M5"),function(nm) {
+diagnostic_rows <- bind_rows(lapply(c("M2","M4"),function(nm) {
   m<-models_assess[[nm]]
   tibble(Model=nm,Row=seq_len(nrow(d_assess)),Fitted=fitted(m),
-    Deviance_residual=residuals(m,type="deviance"),Pearson_residual=residuals(m,type="pearson"),
+    Deviance_residual=residuals(m,type="deviance"),
     Cooks_distance=cooks.distance(m),Leverage=hatvalues(m))
 }))
 residual_plot <- ggplot(diagnostic_rows,aes(Fitted,Deviance_residual)) +
-  geom_point(alpha=.05,size=.5) + geom_hline(yintercept=0,linetype=2) + facet_wrap(~Model) +
-  labs(x="Fitted purchase probability",y="Deviance residual")
-cook_plot <- ggplot(diagnostic_rows,aes(Row,Cooks_distance)) + geom_point(alpha=.3,size=.6) +
-  geom_hline(yintercept=4/nrow(d_assess),color="#BD582C",linetype=2) + facet_wrap(~Model,scales="free_y") +
-  labs(x="Analytical row number",y="Cook's distance")
+  geom_point(alpha=.06,size=.5,color="#555555") + geom_hline(yintercept=0,linetype=2) +
+  facet_wrap(~Model) + labs(x="Fitted purchase probability",y="Deviance residual")
+cook_plot <- ggplot(diagnostic_rows,aes(Row,Cooks_distance)) + geom_point(alpha=.3,size=.5,color="#156082") +
+  geom_hline(yintercept=4/nrow(d_assess),linetype=2,color="#BD582C") +
+  facet_wrap(~Model,scales="free_y") + labs(x="Session row",y="Cook's distance")
 influence_summary <- diagnostic_rows |> group_by(Model) |> summarise(
   Flagged=sum(Cooks_distance>4/nrow(d_assess)),Max_Cook=max(Cooks_distance),
-  Most_influential=Row[which.max(Cooks_distance)],Max_leverage=max(Leverage),.groups="drop")
+  Most_influential=Row[which.max(Cooks_distance)],.groups="drop")
 
-# Interpretable finite contrasts use the full covariance matrix, including spline
-# basis covariances. Coefficients of spline bases are NOT per-minute odds ratios.
-duration_contrast <- function(m,visitor,from=10,to=20) {
-  nd<-d_assess[rep(1,2),,drop=FALSE]
-  nd$VisitorType<-factor(rep(visitor,2),levels=levels(d_assess$VisitorType))
-  nd$Duration_Minutes<-c(from,to);nd$Log_Duration<-log1p(c(from,to))
-  X<-model.matrix(delete.response(terms(m)),model.frame(delete.response(terms(m)),nd,xlev=m$xlevels),contrasts.arg=m$contrasts)
-  delta<-X[2,]-X[1,];est<-sum(delta*coef(m));se<-sqrt(drop(delta %*% vcov(m) %*% delta))
-  tibble(Visitor=visitor,From=from,To=to,Log_OR=est,SE_log_OR=se,OR=exp(est),
-    Lower=exp(est-1.96*se),Upper=exp(est+1.96*se),p=2*pnorm(-abs(est/se)))
+# Interpret a familiar time interval, combining duration and interaction terms.
+duration_effect <- function(m,visitor,xvar,from=10,to=20) {
+  b<-coef(m);w<-setNames(rep(0,length(b)),names(b));w[xvar]<-1
+  it<-grep(paste0(xvar,":VisitorType|VisitorType.*:",xvar),names(b),value=TRUE)
+  if(visitor=="Returning_Visitor") w[it]<-1
+  change<-if(xvar=="Log_Duration") log1p(to)-log1p(from) else to-from
+  est<-sum(w*b)*change;se<-sqrt(drop(t(w)%*%vcov(m)%*%w))*change
+  tibble(Visitor=visitor,From=from,To=to,OR=exp(est),Lower=exp(est-1.96*se),
+         Upper=exp(est+1.96*se),p=2*pnorm(-abs(est/se)))
 }
-contrast_table <- bind_rows(lapply(c("M2","M3","M4","M5"),function(nm) {
-  bind_rows(lapply(levels(d_assess$VisitorType),function(v) duration_contrast(models_assess[[nm]],v))) |> mutate(Model=nm)
+contrast_table <- bind_rows(lapply(c("M2","M3","M4"),function(nm) {
+  xvar<-if(nm=="M4") "Log_Duration" else "Duration_Minutes"
+  bind_rows(lapply(levels(d_assess$VisitorType),function(v) duration_effect(models_assess[[nm]],v,xvar))) |>
+    mutate(Model=nm)
 }))
-top5<-head(order(cooks.distance(model5),decreasing=TRUE),5)
-model5_drop1<-glm(f5,data=d_assess[-top5[1],],family=binomial())
-model5_drop5<-glm(f5,data=d_assess[-top5,],family=binomial())
-model5_dedup<-glm(f5,data=d_assess[!duplicated(d_assess),],family=binomial())
-model5_positive<-glm(f5,data=d_assess[d_assess$Duration_Minutes>0,],family=binomial())
-sensitivity_models<-list("Full M5"=model5,"Drop largest Cook"=model5_drop1,"Drop top 5 Cook"=model5_drop5,
-  "Remove exact duplicate rows"=model5_dedup,"Positive duration only"=model5_positive,"Omit exit rate"=model5_noexit,"Flexible administrative count"=model5_admin)
+top5<-head(order(cooks.distance(model4),decreasing=TRUE),5)
+sensitivity_models<-list("All sessions"=model4,
+  "Drop largest Cook case"=glm(f4,data=d_assess[-top5[1],],family=binomial()),
+  "Drop top five Cook cases"=glm(f4,data=d_assess[-top5,],family=binomial()),
+  "Remove exact duplicate rows"=glm(f4,data=d_assess[!duplicated(d_assess),],family=binomial()))
 sensitivity_contrasts<-bind_rows(lapply(names(sensitivity_models),function(nm) {
-  bind_rows(lapply(levels(d_assess$VisitorType),function(v) duration_contrast(sensitivity_models[[nm]],v))) |> mutate(Analysis=nm)
+  bind_rows(lapply(levels(d_assess$VisitorType),function(v) duration_effect(sensitivity_models[[nm]],v,"Log_Duration"))) |>
+    mutate(Analysis=nm)
 }))
 
-# Original conditional predictions use 18 pages. Examine an approximate local
-# support window, then restrict the revised figure to 5-25 min for BOTH groups.
-prediction_support<-d_assess |> filter(ProductRelated>=15,ProductRelated<=21) |>
+prediction_support <- d_assess |> filter(ProductRelated>=15,ProductRelated<=21) |>
   group_by(VisitorType) |> summarise(Sessions=n(),P95_minutes=quantile(Duration_Minutes,.95),
     Maximum_minutes=max(Duration_Minutes),Sessions_60plus=sum(Duration_Minutes>=60),.groups="drop")
-prediction_grid<-expand.grid(Duration_Minutes=seq(5,25,length.out=151),VisitorType=levels(d_assess$VisitorType))
+prediction_grid <- expand.grid(Duration_Minutes=seq(5,25,length.out=101),VisitorType=levels(d_assess$VisitorType))
 prediction_grid$VisitorType<-factor(prediction_grid$VisitorType,levels=levels(d_assess$VisitorType))
 prediction_grid$Log_Duration<-log1p(prediction_grid$Duration_Minutes)
 prediction_grid$ProductRelated<-18
@@ -218,124 +194,107 @@ prediction_grid$Informational<-median(d_assess$Informational)
 prediction_grid$ExitRates<-median(d_assess$ExitRates)
 prediction_grid$Month<-factor("May",levels=levels(d_assess$Month))
 prediction_grid$TrafficGroup<-factor("2",levels=levels(d_assess$TrafficGroup))
-pr<-predict(model5,newdata=prediction_grid,type="link",se.fit=TRUE)
+pr<-predict(model4,newdata=prediction_grid,type="link",se.fit=TRUE)
 prediction_grid$Probability<-plogis(pr$fit)
 prediction_grid$Lower<-plogis(pr$fit-1.96*pr$se.fit)
 prediction_grid$Upper<-plogis(pr$fit+1.96*pr$se.fit)
-probability_plot<-ggplot(prediction_grid,aes(Duration_Minutes,Probability,color=VisitorType,fill=VisitorType)) +
+probability_plot <- ggplot(prediction_grid,aes(Duration_Minutes,Probability,color=VisitorType,fill=VisitorType)) +
   geom_ribbon(aes(ymin=Lower,ymax=Upper),alpha=.12,color=NA) + geom_line(linewidth=.9) +
+  scale_color_manual(values=visitor_colors,labels=visitor_labels) +
+  scale_fill_manual(values=visitor_colors,labels=visitor_labels) +
   scale_y_continuous(labels=scales::label_percent(accuracy=1)) +
-  scale_color_manual(values=c("#156082","#BD582C"),labels=visitor_labels) +
-  scale_fill_manual(values=c("#156082","#BD582C"),labels=visitor_labels) +
-  labs(x="Product browsing duration (minutes)",y="Conditional purchase probability",color=NULL,fill=NULL) +
-  theme(legend.position="bottom")
-
-calibration_data<-diagnostic_rows |> group_by(Model) |> mutate(Bin=ntile(Fitted,10)) |>
-  group_by(Model,Bin) |> summarise(Predicted=mean(Fitted),Observed=mean(d_assess$Revenue[Row]),N=n(),.groups="drop")
-calibration_plot<-ggplot(calibration_data,aes(Predicted,Observed,color=Model)) + geom_abline(slope=1,intercept=0,linetype=2) +
-  geom_point(size=2) + geom_line() + coord_equal() + labs(x="Mean fitted probability",y="Observed conversion rate") +
-  scale_color_manual(values=c("#6A6A6A","#156082"))
-roc_objects<-lapply(models_assess[c("M2","M5")],function(m) pROC::roc(d_assess$Revenue,fitted(m),levels=c(0,1),direction="<",quiet=TRUE))
+  labs(x="Product browsing duration (minutes)",y="Purchase probability",color=NULL,fill=NULL)
+calibration_data <- diagnostic_rows |> group_by(Model) |> mutate(Bin=ntile(Fitted,10)) |>
+  group_by(Model,Bin) |> summarise(Predicted=mean(Fitted),Observed=mean(d_assess$Revenue[Row]),.groups="drop")
+calibration_plot <- ggplot(calibration_data,aes(Predicted,Observed,color=Model)) +
+  geom_abline(slope=1,intercept=0,linetype=2) + geom_point(size=2) + geom_line() +
+  coord_equal() + labs(x="Mean fitted probability",y="Observed conversion")
+roc_objects<-lapply(models_assess[c("M2","M4")],function(m) pROC::roc(d_assess$Revenue,fitted(m),levels=c(0,1),direction="<",quiet=TRUE))
 roc_data<-bind_rows(lapply(names(roc_objects),function(nm) tibble(Model=nm,FPR=1-roc_objects[[nm]]$specificities,TPR=roc_objects[[nm]]$sensitivities)))
 roc_plot<-ggplot(roc_data,aes(FPR,TPR,color=Model)) + geom_line(linewidth=.8) +
-  geom_abline(slope=1,intercept=0,linetype=2) + coord_equal() +
-  labs(x="1 - specificity",y="Sensitivity") + scale_color_manual(values=c("#6A6A6A","#156082"))
-# No threshold tuning or train/test exercise: inference is the project goal.
-# 0.5 is a transparent illustrative equal-cost threshold for calibrated probabilities.
-# It is not claimed to be optimal for an unspecified business decision.
-thresholds<-c(.5,mean(d_assess$Revenue))
-classification<-bind_rows(lapply(thresholds,function(t) {
-  actual<-d_assess$Revenue;pred<-as.integer(fitted(model5)>=t)
-  TP<-sum(pred==1 & actual==1);TN<-sum(pred==0 & actual==0)
-  FP<-sum(pred==1 & actual==0);FN<-sum(pred==0 & actual==1)
-  tibble(Threshold=t,TP=TP,FP=FP,FN=FN,TN=TN,Sensitivity=TP/(TP+FN),Specificity=TN/(TN+FP),
-    PPV=TP/(TP+FP),Accuracy=(TP+TN)/length(actual))
+  geom_abline(slope=1,intercept=0,linetype=2) + coord_equal() + labs(x="1 - specificity",y="Sensitivity")
+classification <- bind_rows(lapply(c(.5,mean(d_assess$Revenue)),function(t) {
+  y<-d_assess$Revenue;p<-as.integer(fitted(model4)>=t)
+  TP<-sum(p==1 & y==1);TN<-sum(p==0 & y==0);FP<-sum(p==1 & y==0);FN<-sum(p==0 & y==1)
+  tibble(Threshold=t,TP=TP,FP=FP,FN=FN,TN=TN,Sensitivity=TP/(TP+FN),Specificity=TN/(TN+FP),Accuracy=(TP+TN)/length(y))
 }))
 confusion<-with(classification[1,],matrix(c(TN,FP,FN,TP),nrow=2,byrow=TRUE,
   dimnames=list(Actual=c("No purchase","Purchase"),Predicted=c("No purchase","Purchase"))))
 
-# Publication tables use exponential scale; SE(OR) is a delta-method SE.
-nice_term<-function(z) {
-  z<-gsub("splines::ns(Log_Duration, df = 3)","Duration spline basis ",z,fixed=TRUE)
-  z<-gsub("VisitorTypeReturning_Visitor","Returning visitor",z,fixed=TRUE)
-  z<-gsub("Duration_Minutes","Duration (min)",z,fixed=TRUE)
-  z<-gsub("ProductRelated","Product pages (count)",z,fixed=TRUE)
-  z<-gsub("Administrative","Administrative pages (count)",z,fixed=TRUE)
-  z<-gsub("Informational","Informational pages (count)",z,fixed=TRUE)
-  z<-gsub("ExitRates","Exit rate (proportion)",z,fixed=TRUE)
-  z<-gsub("WeekendTRUE","Weekend vs weekday",z,fixed=TRUE)
-  z<-gsub("TrafficGroupOther","Traffic: pooled sparse categories",z,fixed=TRUE)
-  z<-gsub("TrafficGroup","Traffic code ",z,fixed=TRUE)
-  z<-gsub("Month","Month: ",z,fixed=TRUE)
-  z<-gsub(":"," x ",z,fixed=TRUE)
-  z<-gsub("(Intercept)","Intercept",z,fixed=TRUE)
-  z
+nice_term <- function(z) {
+  replacements<-c("Duration_Minutes"="Duration (minutes)","Log_Duration"="Log(1 + minutes)",
+    "VisitorTypeReturning_Visitor"="Returning visitor","ProductRelated"="Product page count",
+    "WeekendTRUE"="Weekend vs weekday","Administrative"="Administrative page count",
+    "Informational"="Informational page count","ExitRates"="Exit rate (proportion)",
+    "TrafficGroupOther"="Traffic: pooled small categories","TrafficGroup"="Traffic code ","Month"="Month ","(Intercept)"="Intercept")
+  for(k in names(replacements)) z<-gsub(k,replacements[[k]],z,fixed=TRUE)
+  gsub(":"," x ",z,fixed=TRUE)
 }
-coef_table<-function(m) {
-  ss<-coef(summary(m));beta<-ss[,1];se<-ss[,2]
-  tibble(Predictor=nice_term(rownames(ss)),`Exp(estimate)`=sprintf("%.4g",exp(beta)),
-    `SE exp-scale`=sprintf("%.3g",exp(beta)*se),
-    `95% CI`=sprintf("%.3g to %.3g",exp(beta-1.96*se),exp(beta+1.96*se)),`p-value`=fmt_p(ss[,4]))
+coef_table <- function(m) {
+  z<-coef(summary(m));b<-z[,1];se<-z[,2]
+  tibble(Predictor=nice_term(rownames(z)),`Odds ratio`=sprintf("%.4g",exp(b)),
+    `SE (OR scale)`=sprintf("%.3g",exp(b)*se),
+    `95% CI`=sprintf("%.3g to %.3g",exp(b-1.96*se),exp(b+1.96*se)),`p-value`=fmt_p(z[,4]))
 }
-table_fit<-fit_metrics |> transmute(Model,Parameters,Deviance=round(Deviance,1),AIC=round(AIC,1),
+table_fit <- fit_metrics |> transmute(Model,Parameters,Deviance=round(Deviance,1),AIC=round(AIC,1),
   `McFadden R2`=round(McFadden,3),`HL p`=fmt_p(HL_p))
-table_contrast<-contrast_table |> filter(Model %in% c("M2","M4","M5")) |>
-  transmute(Model,Visitor=dplyr::recode(Visitor,!!!visitor_labels),`OR: 10 to 20 min`=sprintf("%.2f",OR),
-    `95% CI`=sprintf("%.2f to %.2f",Lower,Upper))
+table_contrast <- contrast_table |> transmute(Model,Visitor=dplyr::recode(Visitor,!!!visitor_labels),
+  `OR: 10 to 20 min`=sprintf("%.2f",OR),`95% CI`=sprintf("%.2f to %.2f",Lower,Upper))
 for(nm in c("fit_metrics","interaction_tests","functional_tests","vif_main","vif_interaction","vif_proposed",
   "numerical_checks","category_support","influence_summary","contrast_table","sensitivity_contrasts",
   "prediction_support","classification","calibration_data")) {
   write.csv(get(nm),file.path("outputs/diagnostics",paste0(nm,".csv")),row.names=FALSE)
 }
 write.csv(predictor_cor,"outputs/diagnostics/predictor_correlations.csv")
-write.csv(coef_table(model5),"outputs/diagnostics/proposed_model_coefficients.csv",row.names=FALSE)
+write.csv(coef_table(model4),"outputs/diagnostics/proposed_model_coefficients.csv",row.names=FALSE)
 for(nm in c("partial_initial_plot","partial_log_plot","residual_plot","cook_plot","probability_plot","calibration_plot","roc_plot")) {
-  ggsave(file.path("outputs/diagnostics",paste0(nm,".png")),get(nm),width=7,height=3.5,dpi=180,bg="white")
+  ggsave(file.path("outputs/diagnostics",paste0(nm,".png")),get(nm),width=7,height=3.3,dpi=180,bg="white")
 }
 saveRDS(list(models=models_assess,fit_metrics=fit_metrics,contrasts=contrast_table),"outputs/diagnostics/model_assessment.rds")
 writeLines(capture.output(sessionInfo()),"outputs/diagnostics/session-info.txt")
 
-
 ```
+
 
 # Part I. Data science memo
 
 **To:** E-commerce product manager  
-**Subject:** Visitor engagement and purchase conversion  
-**Status:** Analysis draft; proposed model revision requires team review
+**Subject:** What browsing time tells us about new and returning shoppers
 
 ## Executive summary
 
-We studied 12,245 sessions to assess whether product browsing time relates to
-purchase conversion differently for new and returning visitors, after accounting
-for other session characteristics. New visitors converted more often than
-returning visitors (24.91% versus 13.93%), despite shorter average product
-browsing time. Duration and conversion are associated, but the estimated
-visitor-group difference depends on how duration and other behaviors are modeled.
+We wanted to understand whether spending more time on product pages has the
+same relationship with purchasing for new and returning visitors. Among 12,245
+sessions, new visitors converted more often than returning visitors (24.91%
+versus 13.93%), even though returning visitors spent longer browsing on average.
+Our initial model suggested that additional browsing time had a stronger
+positive association with purchase odds among new visitors.
 
-The original linear-duration model suggested a stronger positive association for
-new visitors. Diagnostics identified functional-form and calibration concerns.
-Broader adjustment and a flexible duration specification give evidence that the
-relationship's shape differs by visitor type (joint interaction p
-`r fmt_p(interaction_tests$p[4])`). A simpler log-duration alternative does not
-clearly distinguish the two slopes (p `r fmt_p(interaction_tests$p[3])`). These
-results do not establish that increasing time on site causes purchases. Use the
-findings to guide investigation and experiments, while reviewing the proposed
-specification before adopting a single numerical effect.
+That difference became less clear when we accounted for more session
+characteristics and allowed the duration relationship to flatten through a log
+transformation. In this adjusted model, purchase odds increased with browsing
+time in both groups, but the interaction was not statistically significant
+(p = `r sprintf('%.3f',interaction_tests$p[3])`). The main implication is that
+time on site should be interpreted alongside the type of visitor and the rest
+of the session, rather than treated as a direct measure of purchase intent.
+These data do not show that keeping someone browsing longer causes a purchase.
 
-## Motivation and descriptive findings
+## Why this question matters
 
-Browsing can reflect both interest and comparison shopping. Sakar and colleagues
-(2019) show that session behavior can inform purchase-intention analysis.
-For a product manager, the practical question is whether the same engagement
-measure has the same interpretation across visitor groups.
+A long visit could mean that someone is interested, comparing products or having
+trouble finding information. Those possibilities suggest different product
+decisions. Previous research has shown that browsing and session information
+can help explain purchasing behavior (Sakar et al., 2019). We focus on whether
+visitor type changes the relationship between product browsing time and
+purchase conversion, after accounting for other browsing behaviors and session
+characteristics.
 
-**Research question:** How does the relationship between product-page engagement
-and purchase conversion differ between new and returning visitors, after
-accounting for other browsing behaviors and session characteristics?
+## What we observed
 
 ```{r}
-#| label: memo-descriptive-table
+#| label: tbl-memo-descriptive
+#| tbl-cap: "Purchase conversion and product browsing time by visitor type."
+#| tbl-pos: H
 df_clean |> group_by(VisitorType) |>
   summarise(Sessions=n(),Purchases=sum(Revenue),Conversion=scales::percent(mean(Revenue),accuracy=.01),
     `Mean time (min)`=round(mean(Duration_Minutes),2),.groups="drop") |>
@@ -343,311 +302,319 @@ df_clean |> group_by(VisitorType) |>
   knitr::kable(col.names=c("Visitor type","Sessions","Purchases","Conversion","Mean time (min)"),booktabs=TRUE)
 ```
 
-Overall conversion was 15.45%. These group comparisons are descriptive and do
-not adjust for differing session composition. The stakeholder should interpret
-time alongside navigation volume and acquisition context.
+Overall, 15.45% of sessions ended in a purchase. Returning visitors spent about
+twice as long on product pages on average, yet had a lower conversion rate.
+These descriptive differences do not account for the composition of the
+sessions, and they do not tell us whether an additional minute has the same
+association with purchasing in each group.
 
 \newpage
 
-## Statistical findings and interpretation
+## Interpreting the adjusted results
 
 ```{r}
-#| label: fig-memo-probability
-#| fig-cap: "Proposed model: conditional purchase probabilities with pointwise 95% confidence intervals. Profile: 18 product pages, weekday, May, traffic code 2, other page counts and exit rate at medians."
+#| label: fig-adjusted-probabilities
+#| fig-cap: "Adjusted log-duration model: conditional purchase probabilities with pointwise 95% confidence intervals. The profile holds product page count at 18, weekday, May, traffic code 2, other page counts and exit rate at their medians."
 #| fig-width: 6.3
-#| fig-height: 2.7
+#| fig-height: 2.55
 #| fig-pos: H
 probability_plot
 ```
 
-The revised curves allow the duration-conversion association to change across
-the observed range. They describe a specified session profile, rather than
-average probabilities for every visitor. Displaying only 5-25 minutes avoids
-zero-time extrapolation for this 18-page profile and the earlier unsupported
-60-minute illustration for new visitors with roughly
-18 product pages. Joint support for all characteristics is still imperfect.
+Both curves rise as browsing time increases. For example, holding the other
+characteristics constant, moving from 10 to 20 minutes is associated with the
+following changes in purchase odds:
 
 ```{r}
-#| label: memo-contrast-table
-table_contrast |> filter(Model=="M5") |> select(-Model) |>
-  knitr::kable(booktabs=TRUE,caption="Proposed-model odds ratios for 10 versus 20 minutes, holding other characteristics constant.")
+#| label: tbl-memo-effects
+#| tbl-cap: "Adjusted purchase odds for an increase from 10 to 20 minutes (M4)."
+#| tbl-pos: H
+table_contrast |> filter(Model=="M4") |> select(-Model) |> knitr::kable(booktabs=TRUE)
 ```
 
-Odds ratios compare purchase odds; they are not probability ratios. Because the
-model is nonlinear, this contrast does not apply to every additional ten minutes.
-The overall interaction compares entire curve shapes, not only this interval.
+The larger point estimate for new visitors does not establish that the groups'
+duration associations differ; the interaction test does not provide clear
+evidence of a difference. These odds ratios also apply to this particular time
+interval, rather than to every additional ten minutes.
 
-## High-level methodology and recommended next steps
+Familiarity offers one possible explanation for why browsing time could have
+different meanings. New visitors may use extra time to learn about unfamiliar
+products, while returning visitors may already know the site and navigate more
+directly toward what they want. The initial model is consistent with this idea,
+but we did not measure familiarity, browsing goals or prior purchases, and the
+adjusted results do not establish that explanation. Returning visitors also
+browsed longer on average in this sample. The question is what extra time
+means within each group, rather than simply which group spends longer online.
 
-We used logistic regression for a binary purchase outcome, including an
-interaction between duration and visitor type. We compared the original models
-with broader adjustment for navigation, month and traffic category. Model
-assessment motivated a flexible duration specification. Findings are exploratory
-associations from a historical observational dataset.
+## What the product team can do next
 
-Investigate whether new and returning visitors need different navigation or
-product-information support. Do not set a universal time-on-site target from
-these results. Test proposed changes in a randomized experiment and measure
-conversion, while monitoring customer experience. Before operational use,
-collect intent, product, price and campaign information, verify the specification
-with the team, and assess performance on new sessions.
+Treat browsing duration as one signal alongside page count and navigation
+behavior. Investigate whether first-time visitors need clearer product
+information or guidance, and whether returning visitors can easily find products
+they already know. These are ideas to test, rather than effects demonstrated by
+this analysis. A randomized test of a specific design change could assess its
+effect on conversion. We would also collect information on shopping goals,
+product categories and prior visits to better understand the patterns.
+
+We used logistic regression with a duration-by-visitor interaction. The technical
+appendix explains the additional adjustment, transformation and diagnostic
+checks underlying these conclusions.
 
 \newpage
 
 # Part II. Technical appendix
 
-## Data, study population and assumptions
+## Data and analytical sample
 
-The UCI dataset contains 12,330 sessions and 18 original variables (Sakar &
-Kastro, 2018). Its documentation states that sessions were sampled from different
-users over a year. We exclude 85 sessions labeled as the other visitor category
-because the question concerns new versus returning visitors. No missing-value
-imputation is needed. The analytical sample has 1,892 purchases and 10,353
-non-purchases. Durations are converted from seconds to minutes. Zero durations
-and long sessions are retained because they are not, by themselves, data errors.
+The Online Shoppers Purchasing Intention Dataset contains 12,330 sessions and
+18 original variables (Sakar & Kastro, 2018). Each row describes a browsing
+session, and the outcome indicates whether it ended in a purchase. The source
+states that sessions were selected from different users over a one-year period.
+We excluded 85 sessions in the other visitor category to focus on new and
+returning visitors. The resulting sample contains 12,245 sessions, including
+1,892 purchases. There were no missing values requiring imputation.
 
-There are 125 duplicate rows in the original data and
-`r sum(duplicated(d_assess))` in the analytical sample. Without identifiers, their
-status cannot be verified; they are retained with a deduplication sensitivity
-analysis. Distinct sampled users support independence, but cannot rule out
-shared campaign or time effects. The binary outcome is compatible with a
-Bernoulli distribution. Logistic regression assumes the specified mean structure
-on the log-odds scale; it does not require normal predictors or normal residuals.
+The original data contain 125 duplicate rows; 121 remain in the analytical
+sample. We retained them because identifiers are unavailable to determine
+whether they are duplicate entries or separate sessions with identical recorded
+characteristics. A sensitivity analysis removes them. Zero-duration sessions
+and unusually long sessions were also retained because these values alone do
+not establish a recording error. Product browsing duration was converted from
+seconds to minutes. The log alternative uses $L_i=\log(1+D_i)$, retaining zero
+durations.
 
-## Model specification and adjustment rationale
+## Models and covariate selection
 
-Let $Y_i$ indicate a purchase, $D_i$ denote product browsing minutes, and $R_i$
-indicate a returning visitor. The two original models are
+Let $Y_i\sim\mathrm{Bernoulli}(p_i)$ indicate a purchase, $D_i$ denote product
+browsing minutes, and $R_i$ indicate a returning visitor. With product page
+count $P_i$ and weekend indicator $W_i$, the original models are
 
-$$\operatorname{logit}(p_i)=\beta_0+\beta_D D_i+\beta_R R_i+
-\beta_P P_i+\beta_W W_i \quad (M1),$$
-$$\operatorname{logit}(p_i)=\beta_0+\beta_D D_i+\beta_R R_i+
-\beta_{DR}D_iR_i+\beta_P P_i+\beta_W W_i \quad (M2),$$
+$$\operatorname{logit}(p_i)=\beta_0+\beta_DD_i+\beta_RR_i+
+\beta_PP_i+\beta_WW_i \quad (M1),$$
+$$\operatorname{logit}(p_i)=\beta_0+\beta_DD_i+\beta_RR_i+
+\beta_{DR}D_iR_i+\beta_PP_i+\beta_WW_i \quad (M2).$$
 
-where $P_i$ is product page count and $W_i$ indicates weekend. M3 adds month,
-traffic category, administrative and informational page counts, and exit rate.
-M4 replaces $D_i$ with $\log(1+D_i)$. The proposed M5 is
+M3 adds administrative and informational page counts, exit rate, month and
+traffic category to M2. These variables account for other navigation, seasonality
+and differences in acquisition context. They are plausible adjustment variables,
+not established causal confounders. M4 retains that adjustment set and replaces
+$D_i$ with $L_i$ in both the main effect and interaction:
 
-$$\operatorname{logit}(p_i)=\alpha+\gamma R_i+
-\sum_{k=1}^{3}\{\theta_k B_k[\log(1+D_i)]
-+\delta_k R_i B_k[\log(1+D_i)]\}+\boldsymbol{\eta}^{T}\mathbf{C}_i,$$
+$$\operatorname{logit}(p_i)=\alpha+\gamma_LL_i+\gamma_RR_i+
+\gamma_{LR}L_iR_i+\boldsymbol{\eta}^{T}\mathbf{C}_i,$$
 
-where $B_k$ are natural-spline basis functions and $\mathbf C_i$ contains the
-M3 controls. The spline uses 3 degrees of freedom, interior knots at the
-one-third and two-thirds quantiles, and observed boundaries. The joint null is
-$\delta_1=\delta_2=\delta_3=0$.
+where $\mathbf{C}_i$ contains the M3 controls. This remains an ordinary logistic
+regression with one duration-by-visitor interaction. All four models use the same
+sessions and are fitted by maximum likelihood.
 
-Controls represent navigation volume, seasonal context and acquisition source;
-they are plausible adjustment variables rather than verified causal confounders.
-Traffic codes with fewer than 100 sessions are pooled by frequency alone. Page
-value is omitted because it is transaction-related; bounce rate is omitted
-because of its overlap with exit rate. An alternate model omits exit rate because
-it may reflect the same browsing process. References are new visitors, weekdays,
-May and traffic code 1. All models use maximum likelihood on the same sessions.
-
-\newpage
-
-## Functional form, correlation and numerical checks
-
-```{r}
-#| label: fig-appendix-partial
-#| fig-cap: "Initial model partial residual checks: LOESS (solid) and a linear guide (dashed). Display is trimmed; fitted models retain all observations."
-#| fig-width: 6.4
-#| fig-height: 2.5
-#| fig-pos: H
-partial_initial_plot + labs(title=NULL)
-```
-
-The original model's nonlinear-duration check rejects the constant-slope
-restriction (LR p `r fmt_p(functional_tests$p[1])`). A log transform is considered
-after this assessment, not to normalize the predictor. M4 improves AIC over M3
-by `r round(AIC(model3)-AIC(model4),1)`, but a nested comparison still favors
-duration curvature in M5 (LR `r round(functional_tests$LR[3],2)`, 4 df,
-p `r fmt_p(functional_tests$p[3])`). Raw and log models are nonnested, so no
-likelihood-ratio test is used between them.
-
-Duration and product page count correlate at
-`r round(predictor_cor['Duration_Minutes','ProductRelated'],3)`.
-Their M1 VIFs are `r round(vif_main$VIF[1],2)` and
-`r round(vif_main$VIF[3],2)`. M2 duration and interaction term VIFs are
-`r round(vif_interaction$VIF[1],1)` and `r round(vif_interaction$VIF[5],1)`;
-these also reflect overlap between interaction columns and the unequal visitor
-group sizes. The interaction is retained to address the research question.
-Multi-column GVIFs and correlations are exported with the diagnostic results.
-
-All five model fits converge with full-rank design matrices. Tighter-tolerance
-refits, coefficient standard errors and extreme probabilities are inspected.
-Both outcomes occur in each retained categorical level after pooling. There is
-no obvious numerical separation warning in M5; this screen is not a formal proof
-that separation is absent. The course's HW6 motivates partial residual and
-Hosmer-Lemeshow checks; the GLM slides guide the distribution and link assumptions.
-
-Remaining functional-form checks are exploratory: administrative page count has
-evidence of curvature (p `r fmt_p(functional_tests$p[functional_tests$Comparison=="M5: curvature in Administrative"])`).
-Its flexible sensitivity model is assessed alongside case deletion and
-deduplication. Other unmodeled interactions may remain; M5 is a reviewable
-proposal rather than a claim that every assumption has been verified.
+Traffic categories with fewer than 100 sessions were pooled using their
+frequencies alone to avoid very sparse levels; some original small categories
+had no purchases. Reference categories are new visitors, weekdays, May and
+traffic code 1. Page value was excluded because it is transaction-related.
+Bounce rate was excluded because it closely overlaps exit rate. Other session
+features were not all added automatically, since adjustment also changes what
+the duration coefficient represents.
 
 \newpage
 
-## Model comparison and interaction inference
+## Assumptions and functional form
+
+The binary outcome is compatible with a Bernoulli logistic model. Sampling
+different users supports independence, although we cannot verify identities or
+assess shared campaign and exact-date effects. Logistic regression requires an
+appropriate relationship between continuous predictors and the log odds; it
+does not require normally distributed predictors or residuals.
 
 ```{r}
-#| label: appendix-fit-table
-knitr::kable(table_fit,booktabs=TRUE)
-```
-
-M1/M2 use the original adjustment; M3 expands adjustment; M4 changes duration
-scale; M5 allows nonlinear duration effects. McFadden's pseudo-$R^2$ compares
-log likelihoods with an intercept-only model and is not variance explained.
-Hosmer-Lemeshow uses ten fitted-risk groups; a nonsignificant result does not
-establish correctness, and its result depends on grouping and sample size.
-
-```{r}
-#| label: appendix-interaction-table
-interaction_tests |> transmute(Comparison,df,LR=round(LR,2),`p-value`=fmt_p(p)) |>
-  knitr::kable(booktabs=TRUE)
-```
-
-The initial interaction LR statistic is `r round(interaction_tests$LR[1],2)`
-(1 df). Its per-minute odds ratios are approximately 1.0255 for new visitors
-and 1.0046 for returning visitors, conditional on page count and weekend.
-Those estimates should not be carried into the revised model unchanged.
-
-After expansion and a simple log-duration specification, interaction evidence
-weakens (M4 p `r fmt_p(interaction_tests$p[3])`). M5's joint test instead detects
-differences in nonlinear shapes (3 df, p `r fmt_p(interaction_tests$p[4])`).
-These tests evaluate different restrictions. The data support exploring visitor
-differences, but do not justify a single universal extra per-minute effect for
-new visitors. All specification choices and subsequent uncertainty estimates
-are exploratory; nominal intervals do not account for model selection.
-
-Finite 10-to-20-minute contrasts in the memo use the full coefficient covariance
-matrix: for design-row difference $\Delta x$, the log odds ratio is
-$\Delta x^T\hat\beta$ and its standard error is
-$\sqrt{\Delta x^T\widehat{\operatorname{Var}}(\hat\beta)\Delta x}$.
-Predicted intervals are formed on the logit scale and inverse-transformed.
-Full original-M2 and proposed-M5 coefficient tables appear in the supplementary
-tables, referenced here because spline coefficients are basis parameters and
-must not be interpreted as individual per-minute effects.
-
-\newpage
-
-## Residuals, influence and calibration
-
-```{r}
-#| label: fig-appendix-residuals
-#| fig-cap: "Binary outcomes generate two residual bands. Their existence is not a normality violation."
+#| label: fig-partial-log
+#| fig-cap: "Partial working residuals for log duration in M4. The solid line is a smooth trend and the dashed line is a linear guide. The display omits the upper 1% of duration values and limits the vertical axis for readability; models retain all sessions."
 #| fig-width: 6.3
-#| fig-height: 2.0
+#| fig-height: 2.45
+#| fig-pos: H
+partial_log_plot
+```
+
+The raw-duration partial residual plots raise concerns about a constant slope,
+especially across very short and long sessions. We therefore evaluated a
+log-duration alternative. The transformation allows the association of an
+additional minute with log odds to become smaller at longer durations. It was
+not chosen simply to make the predictor less skewed. The log-duration plots
+remain imperfect, so the transformation should be viewed as a useful
+simplification rather than proof that the mean relationship is exactly correct.
+Product page count is also assessed using a partial residual plot in the
+detailed workbook.
+
+## Correlation, VIF and numerical stability
+
+Raw duration and product page count are strongly correlated ($r=0.861$).
+In M1, their VIFs are `r round(vif_main$VIF[1],2)` and
+`r round(vif_main$VIF[3],2)`. In M2, the duration and interaction term VIFs are
+`r round(vif_interaction$VIF[1],1)` and `r round(vif_interaction$VIF[5],1)`.
+Those higher values also reflect overlap between the duration and interaction
+columns, given that most sessions are from returning visitors. Both main effects
+and the interaction are retained because they define the research question.
+The correlation makes holding page count fixed while changing time a more
+restrictive comparison and may reduce precision.
+
+All models converged, have full-rank design matrices and show no boundary fit.
+No extremely near-zero or near-one fitted probabilities were found using
+$10^{-8}$ as a screening tolerance. Both outcomes occur in the retained
+categorical levels. These checks provide no obvious numerical sign of
+separation, although they do not prove its absence. VIF and generalized VIF
+tables, correlations and categorical support checks are exported with the
+diagnostic results.
+
+\newpage
+
+## Residuals and influential sessions
+
+```{r}
+#| label: fig-residual-comparison
+#| fig-cap: "Deviance residuals versus fitted probability for the original interaction model (M2) and expanded log-duration model (M4). Two bands are expected with a binary outcome."
+#| fig-width: 6.3
+#| fig-height: 1.55
 #| fig-pos: H
 residual_plot
 ```
 
-Cook's distance flags `r influence_summary$Flagged[1]` M2 sessions and
-`r influence_summary$Flagged[2]` M5 sessions above $4/n$; this is an investigation
-rule, not an exclusion rule. Maximum Cook's distances are
-`r round(influence_summary$Max_Cook[1],3)` and
-`r round(influence_summary$Max_Cook[2],3)`. Actual refits remove the largest
-one/five M5 cases and exact duplicate rows. The original sample remains primary.
-A positive-duration-only sensitivity fit also checks dependence on zero-time records.
+The two residual bands follow from observing only purchases and non-purchases;
+they are not evidence of a normality violation. We assess model form alongside
+these plots rather than interpreting their shape as a linear-regression
+residual plot.
 
 ```{r}
-#| label: appendix-sensitivity-table
-sensitivity_contrasts |> filter(Analysis %in% c("Full M5","Drop largest Cook","Drop top 5 Cook","Remove exact duplicate rows")) |>
-  transmute(Analysis,Visitor=dplyr::recode(Visitor,!!!visitor_labels),
-    `OR: 10 to 20 min`=sprintf("%.2f",OR),`95% CI`=sprintf("%.2f to %.2f",Lower,Upper)) |>
-  knitr::kable(booktabs=TRUE)
-```
-
-These checks assess finite contrasts rather than comparing spline basis
-coefficients across refits. Re-estimated bases can change coefficient scales.
-Omitting exit rate and allowing flexible administrative page counts are
-additional exported sensitivities. Statistical significance alone does not
-resolve whether these variables belong in the adjustment set.
-
-```{r}
-#| label: fig-appendix-calibration
-#| fig-cap: "In-sample calibration by fitted-risk deciles; the diagonal denotes agreement."
-#| fig-width: 4.2
-#| fig-height: 1.6
+#| label: fig-cooks-comparison
+#| fig-cap: "Cook's distance. The dashed 4/n line identifies sessions to investigate, not sessions to remove automatically. Panels use different vertical scales."
+#| fig-width: 6.3
+#| fig-height: 1.55
 #| fig-pos: H
-calibration_plot
+cook_plot
 ```
+
+There are `r influence_summary$Flagged[1]` M2 sessions and
+`r influence_summary$Flagged[2]` M4 sessions above $4/n$. Maximum Cook's
+distances are `r round(influence_summary$Max_Cook[1],3)` and
+`r round(influence_summary$Max_Cook[2],3)`, respectively. A low screening cutoff
+can flag many observations in a large sample. We retain the original sample and
+refit M4 after removing the largest one and five cases, rather than deleting
+every flagged session. Removing exact duplicate rows is checked separately.
+The 10-to-20-minute odds ratios remain close to their full-sample values in
+these checks; detailed values are available in the workbook.
+
+## Overall fit and model comparison
+
+```{r}
+#| label: tbl-fit-comparison
+#| tbl-cap: "Fit comparison for the four logistic models."
+#| tbl-pos: H
+knitr::kable(table_fit,booktabs=TRUE)
+```
+
+M4 has the lowest AIC of these four models. Raw- and log-duration models are
+nonnested, so we compare AIC rather than using an LR test between them.
+McFadden's pseudo-$R^2$ compares log likelihood with an intercept-only model,
+rather than measuring variance explained. The Hosmer-Lemeshow test checks
+calibration across ten fitted-probability groups; its nonsignificant M4 result
+does not establish that all assumptions hold.
 
 \newpage
 
-## Secondary classification assessment
+## Interaction results and practical interpretation
 
 ```{r}
-#| label: fig-appendix-roc
-#| fig-cap: "In-sample ROC curves; predictive assessment is secondary to inference."
-#| fig-width: 3.4
-#| fig-height: 1.6
-#| fig-pos: H
-roc_plot
+#| label: tbl-interaction-tests
+#| tbl-cap: "Likelihood ratio tests of the duration-by-visitor interaction."
+#| tbl-pos: H
+interaction_tests |> transmute(Comparison,df,LR=round(LR,2),`p-value`=fmt_p(p)) |>
+  knitr::kable(booktabs=TRUE)
 ```
 
-Apparent AUC is `r round(fit_metrics$AUC[2],3)` for M2 and
-`r round(fit_metrics$AUC[5],3)` for M5. These are development-sample metrics,
-not estimates of future performance. A 0.50 threshold illustrates an equal-cost
-classification decision for calibrated probabilities; no intervention costs were
-provided to identify a business optimum. At this threshold, sensitivity is
+In the original M2, each additional minute is associated with about 2.55%
+higher purchase odds for new visitors and 0.46% higher odds for returning
+visitors, holding product page count and weekend fixed. The interaction test
+supports a difference under that specification. Broader adjustment in M3 still
+gives evidence of an interaction. Once duration is logged in M4, the LR
+p-value is `r sprintf('%.3f',interaction_tests$p[3])`, providing weaker evidence
+that the duration association differs by visitor type.
+
+We retain the interaction in M4 to address the research question. For new
+visitors, the duration slope on the log scale is $\gamma_L$; for returning
+visitors it is $\gamma_L+\gamma_{LR}$. For a move from 10 to 20 minutes, each
+slope is multiplied by $\log(21)-\log(11)$ and exponentiated. The intervals in
+the memo account for uncertainty in the combined coefficients. Full M2 and
+M4 coefficient tables are provided in the supplementary table page.
+
+The original 60-minute illustration at 18 product pages is poorly supported:
+among sessions with 15-21 product pages, no new visitor reaches 60 minutes.
+The new-visitor maximum is about 43.1 minutes and its 95th percentile is 26.2.
+We therefore display 5-25 minutes. The displayed probabilities remain
+conditional on a specified profile; they are not visitor-group averages, and
+support for every joint covariate combination remains limited.
+
+## Brief classification assessment
+
+M4's in-sample AUC is `r round(fit_metrics$AUC[4],3)`, compared with
+`r round(fit_metrics$AUC[2],3)` for M2. At a 0.50 threshold, sensitivity is
 `r scales::percent(classification$Sensitivity[1],accuracy=.1)` and specificity
 is `r scales::percent(classification$Specificity[1],accuracy=.1)`.
 
 ```{r}
-#| label: appendix-confusion-table
-knitr::kable(confusion,booktabs=TRUE,caption="Actual outcome (rows) versus predicted outcome (columns), threshold 0.50.")
+#| label: tbl-confusion
+#| tbl-cap: "Actual outcomes (rows) versus predictions (columns), threshold 0.50."
+#| tbl-pos: H
+knitr::kable(confusion,booktabs=TRUE)
 ```
 
-Lowering the threshold to the observed prevalence
-(`r round(classification$Threshold[2],3)`) gives sensitivity
+The threshold illustrates an equal-cost decision if probabilities are
+calibrated; intervention costs are unavailable to choose a business optimum.
+At the observed-prevalence threshold, sensitivity rises to
 `r scales::percent(classification$Sensitivity[2],accuracy=.1)` and specificity
-`r scales::percent(classification$Specificity[2],accuracy=.1)`.
-An always-no-purchase rule is already 84.55% accurate. We therefore avoid treating
-accuracy as evidence of model adequacy or spending substantial effort on tuning.
+falls to `r scales::percent(classification$Specificity[2],accuracy=.1)`.
+An always-no-purchase rule is already 84.55% accurate, so accuracy alone is
+misleading. ROC curves and additional classification details are retained in
+the workbook. These are in-sample summaries, not validated future performance.
 
-## Limitations, future work and review decisions
+## Limitations and future work
 
-Purchase intent, product mix, price, campaign definitions and several session
-features remain uncontrolled. Conditioning on navigation or exit rate may remove
-part of the browsing process. Measurement timing is not sufficient to establish
-causal direction. One historical website and the exclusion of the other visitor
-category limit generalization. User IDs and exact dates are unavailable, and
-very long new-visitor sessions are sparse. Calibration and diagnostics use the
-same sample as estimation; model selection adds unaccounted uncertainty.
+The analysis is observational. Shopping goals, product mix, prices and prior
+purchase history were not measured. Other navigation and exit behavior may be
+part of the browsing process rather than confounders, so their adjustment also
+changes the interpretation. Results depend on functional form, with remaining
+curvature and sparse long-duration sessions limiting a simple slope model.
+The historical sample from one site and the exclusion of other visitor types
+limit generalization. Model choices were evaluated on the same data, and the
+reported intervals do not account for that selection. Future data should
+include session identifiers, timestamps, shopping goals and product details;
+randomized design changes would support stronger conclusions about conversion.
 
-**Before submission:** confirm the broader covariate set and spline specification
-with Person 2; reconcile the original slope statements with the revised curves;
-review the alternate adjustment results; incorporate any new professor feedback;
-and obtain all three members' review. Collect identifiers, timestamps, product,
-price and intent measures, and use a randomized design for causal product decisions.
-
-**References.** Sakar, C. O., & Kastro, Y. (2018). *Online shoppers purchasing
-intention dataset*. UCI. <https://doi.org/10.24432/C5F88Q>.
-Sakar et al. (2019). *Neural Computing and Applications, 31*, 6893-6908.
+**References.** Sakar & Kastro (2018). *Online shoppers purchasing intention
+dataset*. UCI. <https://doi.org/10.24432/C5F88Q>. Sakar et al. (2019).
+*Neural Computing and Applications, 31*, 6893-6908.
 <https://doi.org/10.1007/s00521-018-3523-0>.
-Lane, A. (2026). IDS 702 GLM, logistic-estimation and odds slides; Homework 6
-(course materials). R Core Team. *Regression deletion diagnostics*.
-<https://stat.ethz.ch/R-manual/R-patched/library/stats/html/influence.measures.html>.
 
 \newpage
 
-# Supplementary coefficient tables
+# Supplementary regression tables
 
-These relevant full tables are separated from the seven-page main document
-under the project description's allowance for large model-summary appendices.
-All intervals are Wald 95% intervals; exponentiated-scale standard errors use
-the delta method. Reference levels and model definitions appear in Part II.
-Spline-basis parameters must be interpreted jointly through contrasts or curves.
+The full tables below support the models discussed in the appendix. Large
+regression tables are presented separately under the project description's
+page-limit allowance. Estimates and intervals are on the odds-ratio scale;
+standard errors on that scale are approximated as the odds ratio multiplied by
+the coefficient's log-odds standard error. All confidence intervals are Wald
+95% intervals. Reference categories are new visitors and weekdays, with May
+and traffic code 1 additionally serving as references in M4. The interaction
+coefficient in M4 refers to log(1 + minutes), not to one additional minute.
 
 ```{r}
-#| label: supplementary-model2-table
-knitr::kable(coef_table(model2),booktabs=TRUE,caption="M2: original interaction model.")
+#| label: tbl-regression-original
+#| tbl-cap: "M2: original interaction model."
+#| tbl-pos: H
+knitr::kable(coef_table(model2),booktabs=TRUE)
 ```
 
 ```{r}
-#| label: supplementary-model5-table
-knitr::kable(coef_table(model5),booktabs=TRUE,longtable=TRUE,caption="M5: proposed nonlinear interaction model.")
+#| label: tbl-regression-adjusted
+#| tbl-cap: "M4: expanded adjustment with log duration."
+#| tbl-pos: H
+knitr::kable(coef_table(model4),booktabs=TRUE,longtable=TRUE)
 ```

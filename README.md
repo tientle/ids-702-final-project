@@ -119,6 +119,8 @@ This contribution covers data preparation and EDA; model fitting, inference, dia
 
 # B. Statistical Modeling & Inference
 
+**Initial models.** These results describe the original specifications. Section C evaluates their assumptions, expands adjustment and compares a log-duration alternative; the full report synthesizes the revised findings.
+
 **Person 2**
 
 ## Modeling Approach
@@ -352,32 +354,38 @@ After completing diagnostics, the team should review the final model together be
 
 **Yiran Chen | Person 3**
 
-Completed the diagnostic assessment and written report contributions. See [PERSON3_HANDOFF.md](PERSON3_HANDOFF.md) for the requirement mapping, professor-feedback response, results, and decisions awaiting team review.
+The assessment uses four ordinary logistic regression models:
 
-## Start here
+| Model | Specification |
+|---|---|
+| M1 | Original main effects: duration, visitor type, product page count and weekend |
+| M2 | Original model with duration-by-visitor interaction |
+| M3 | M2 plus administrative/informational page counts, exit rate, month and traffic category |
+| M4 | M3 with log(1 + duration in minutes), including its visitor interaction |
 
-- **Submission draft:** [final-report.qmd](final-report.qmd) and [final-report.pdf](final-report.pdf). The QMD contains every computation needed for the report and renders independently from the raw repository CSV. The memo has 2 pages, the technical appendix has 5 pages, and full model tables are placed in a separate supplementary appendix under the project description's allowance.
-- **Detailed workbook:** Section C of the existing QMD, following the original A/B contributions.
-- **Tables and figures:** `outputs/diagnostics/`. Named CSVs cover model fit, interactions, functional form, VIF/GVIF, numerical checks, influence, finite contrasts, sensitivity analyses, prediction support and classification. PNGs cover partial residuals, residuals vs fitted, Cook's distance, conditional probabilities, calibration and ROC.
+The revised scope retains correlation/VIF, partial residuals, convergence and numerical separation screening, deviance residuals, Cook's distance, simple deletion/deduplication checks, AIC/deviance, McFadden pseudo-R2, Hosmer-Lemeshow, and a brief in-sample ROC/classification assessment. No spline models are used.
 
-Render the standalone report from the repository root:
+## Full report versus individual contribution
 
-```bash
+- **Full integrated report:** `final-report.qmd` and `final-report.pdf` combine the team's data preparation, descriptive findings, initial modeling and revised assessment. They contain the stakeholder memo, technical appendix and supplementary coefficient tables.
+- **Person 3 contribution:** Section C of `Data Preparation & Exploratory Data Analysis.qmd` contains the detailed diagnostic code, visualizations and interpretations. The original A/B contributions are preserved.
+- **Diagnostic tables and figures:** `outputs/diagnostics/`, with 16 CSVs and 7 PNGs. `proposed_model_coefficients.csv` and `vif_proposed.csv` now refer to M4. `functional_tests.csv` is a functional-form comparison summary, not an additional nonlinear-model test.
+- **Review notes:** `PERSON3_HANDOFF.md` documents the scope and remaining team review.
+
+The standalone report contains all required R code in one file and runs independently from the repository's raw CSV. Render from the repository root:
+
+```sh
 quarto render final-report.qmd --to pdf
 ```
 
-Additional packages are `car`, `pROC`, and `ResourceSelection`; see the installation list above. R's built-in `splines` is used for the proposed nonlinear model. The workbook no longer requires `moments`; its complete-data skewness definition is implemented explicitly.
+Install the packages listed above. The model-object RDS and session-info file are regenerated, but are excluded from version control. The workbook uses an explicit complete-data skewness function and does not require `moments`.
 
-## Interpretation and model review
+## Interpretation
 
-The professor's feedback prioritizes inference, asks for more confounder adjustment, and asks why duration was logged. The assessment therefore starts with the original raw-duration models, assesses functional form, expands adjustment substantively, and keeps predictive metrics brief and explicitly in-sample.
+The original and expanded raw-duration models support an interaction, while the expanded log-duration model has an interaction LR p-value of about 0.120. M4 has the lowest AIC among the four specifications, but remaining curvature is acknowledged. The findings do not establish a consistently stronger duration association for new visitors across these specifications.
 
-The initial interaction model has substantial curvature/calibration concerns. An expanded simple log-duration model has interaction LR p about 0.120; the proposed nonlinear model has a joint 3-df interaction p about 0.0000145. These test different hypotheses. The proposed nonlinear model suggests differences in curve shapes, rather than one universal additional per-minute effect for new visitors.
+In M4, moving from 10 to 20 minutes is associated with an odds ratio of about 1.36 (95% CI 1.24-1.48) for new visitors and 1.26 (1.19-1.33) for returning visitors. Those positive associations do not establish a statistically significant difference between groups. The finite comparisons change little after influential-case or duplicate-record removal.
 
-The proposed model's AIC is about 9094.70, compared with 10092.25 for the original interaction model. Its 10-to-20-minute odds ratios are approximately 1.81 for new visitors and 1.29 for returning visitors, and are stable to influential-case and duplicate-record sensitivity checks. These are adjusted associations, not causal effects.
+Visitor familiarity is discussed as a plausible explanation for the initial pattern, not an observed mechanism. Returning visitors browsed longer on average in this sample; the report distinguishes average browsing time from the meaning of additional time within each group. Predictions use a stated conditional profile over 5-25 minutes, avoiding the poorly supported 60-minute new-visitor illustration at approximately 18 pages.
 
-The original 60-minute illustration at 18 product pages lacks support among new visitors. The revised conditional figure displays 5-25 minutes and states its covariate profile and support limitations.
-
-**Before submission, Person 2 and the team must review the expanded adjustment set, nonlinear specification, and revised interpretations.** The standalone PDF is explicitly labeled as a draft; no model revision has been represented as team-approved. All three members' review and Canvas submission remain outstanding.
-
-
+All results are associations. All team members should review the final adjustment set, model interpretation and report before submission. PR #2 remains separate; the Person 3 draft PR targets `statistical-modeling`.
