@@ -1,0 +1,5 @@
+"Comparison","df","LR","p"
+"M1 vs M2: raw-duration interaction",1,20.6877519250011,5.4060700502828e-06
+"M3: expanded raw-duration interaction",1,10.3934099624403,0.00126465854983877
+"M4: expanded log-duration interaction",1,2.42226080846558,0.119622178454348
+"M5: joint nonlinear interaction",3,25.1307823323677,1.44982031979546e-05
