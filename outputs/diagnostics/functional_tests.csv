@@ -1,8 +1,4 @@
-"Comparison","df","LR","p"
-"M2: nonlinear duration by visitor",4,439.181493290956,9.47409522456921e-94
-"M2: nonlinear product page count",2,321.406041564596,1.61274182475685e-70
-"M4 vs M5: remaining duration curvature",4,30.5064937370535,3.85957234368886e-06
-"M5: curvature in ProductRelated",2,4.17216256349093,0.124172781787819
-"M5: curvature in Administrative",2,8.67691010859198,0.0130566844978619
-"M5: curvature in Informational",2,3.61821382796188,0.163800359309163
-"M5: curvature in ExitRates",2,4.39921167394823,0.110846841479081
+"Model","AIC","HL_p","Duration_form","Assessment"
+"M2",10092.2491972422,0,"Minutes","Inspect partial residual plots; no flexible-curve models fitted"
+"M3",9198.11534576233,0.171207435801398,"Minutes","Inspect partial residual plots; no flexible-curve models fitted"
+"M4",9117.20445828549,0.162257018872702,"Log(1 + minutes)","Inspect partial residual plots; no flexible-curve models fitted"
